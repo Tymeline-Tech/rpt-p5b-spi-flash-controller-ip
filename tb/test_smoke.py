@@ -1,19 +1,27 @@
-"""Minimal cocotb smoke test — proves simulate entry point and emits coverage."""
+"""Minimal cocotb smoke test — proves simulate entry point against placeholder RTL."""
 
 import cocotb
 from cocotb.clock import Clock
 from cocotb.triggers import RisingEdge, Timer
-from cocotb_coverage.coverage import CoverPoint, coverage_db
 
+try:
+    from cocotb_coverage.coverage import CoverPoint, coverage_db
 
-@CoverPoint("smoke.rst_released", xf=lambda rst_n: int(rst_n.value), bins=[0, 1])
-def sample_rst(rst_n):
-    pass
+    @CoverPoint("smoke.rst_released", xf=lambda rst_n: int(rst_n.value), bins=[0, 1])
+    def sample_rst(rst_n):
+        pass
+
+    HAVE_COVERAGE = True
+except ImportError:  # pragma: no cover - optional in some environments
+    def sample_rst(rst_n):
+        pass
+
+    HAVE_COVERAGE = False
 
 
 @cocotb.test()
 async def test_reset_and_idle(dut):
-    """Drive clock/reset and confirm stub idle outputs."""
+    """Start clock, apply reset, then check an idle SPI/APB signal."""
     cocotb.start_soon(Clock(dut.clk, 10, unit="ns").start())
 
     dut.rst_n.value = 0
@@ -37,5 +45,6 @@ async def test_reset_and_idle(dut):
     assert int(dut.pready.value) == 1, "APB pready should be ready in stub"
     assert int(dut.irq.value) == 0, "IRQ should be clear at idle"
 
-    # Emit exactly one coverage*.xml at repo root for the verification gate.
-    coverage_db.export_to_xml(filename="../coverage.xml")
+    if HAVE_COVERAGE:
+        # Exactly one coverage*.xml for gates that scan the repo root.
+        coverage_db.export_to_xml(filename="../coverage.xml")

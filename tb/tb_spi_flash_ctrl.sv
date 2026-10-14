@@ -19,7 +19,7 @@ module tb_spi_flash_ctrl;
   logic        irq;
 
   initial begin
-    $dumpfile("spi_flash_ctrl.vcd");
+    $dumpfile("../artifacts/sim/spi_flash_ctrl.vcd");
     $dumpvars(0, tb_spi_flash_ctrl);
   end
 
