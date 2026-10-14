@@ -8,8 +8,8 @@ SYNTH_DIR   := $(ROOT)/synth
 ARTIFACTS   := $(ROOT)/artifacts
 
 TOP         := spi_flash_ctrl
+RTL_FILES   := $(wildcard rtl/*.sv)
 RTL_SRCS    := $(RTL_DIR)/$(TOP).sv
-STUB_SRC    := $(RTL_DIR)/spi_flash_ctrl_stub.sv
 
 .PHONY: all lint simulate synth clean help
 
@@ -19,13 +19,12 @@ help:
 	@echo "Targets: lint | simulate | synth | clean"
 
 # ---------------------------------------------------------------------------
-# lint — Verilator lint-only (hdl_sim container)
-# Includes the stub baseline plus the structural top module.
+# lint — Verilator lint-only (hdl_sim / verilator container)
+# Lints every SystemVerilog source under rtl/; log → artifacts/lint.log
 # ---------------------------------------------------------------------------
 lint:
-	@mkdir -p $(ARTIFACTS)
-	verilator --lint-only -Wall --top-module spi_flash_ctrl_stub $(STUB_SRC)
-	verilator --lint-only -Wall --top-module $(TOP) $(RTL_SRCS)
+	@mkdir -p artifacts
+	bash -o pipefail -c 'verilator --lint-only --top-module $(TOP) $(RTL_FILES) 2>&1 | tee artifacts/lint.log'
 
 # ---------------------------------------------------------------------------
 # simulate — cocotb + Icarus Verilog smoke (hdl_sim container)
