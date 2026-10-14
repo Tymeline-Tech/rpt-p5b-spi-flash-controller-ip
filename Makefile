@@ -9,6 +9,7 @@ ARTIFACTS   := $(ROOT)/artifacts
 
 TOP         := spi_flash_ctrl
 RTL_SRCS    := $(RTL_DIR)/$(TOP).sv
+STUB_SRC    := $(RTL_DIR)/spi_flash_ctrl_stub.sv
 
 .PHONY: all lint simulate synth clean help
 
@@ -19,10 +20,12 @@ help:
 
 # ---------------------------------------------------------------------------
 # lint — Verilator lint-only (hdl_sim container)
+# Includes the stub baseline plus the structural top module.
 # ---------------------------------------------------------------------------
 lint:
 	@mkdir -p $(ARTIFACTS)
-	verilator --lint-only -Wall $(RTL_SRCS)
+	verilator --lint-only -Wall --top-module spi_flash_ctrl_stub $(STUB_SRC)
+	verilator --lint-only -Wall --top-module $(TOP) $(RTL_SRCS)
 
 # ---------------------------------------------------------------------------
 # simulate — cocotb + Icarus Verilog smoke (hdl_sim container)
