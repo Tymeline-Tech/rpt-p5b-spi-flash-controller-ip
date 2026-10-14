@@ -53,14 +53,17 @@ clean-sim-artifacts:
 		$(ROOT)/results.xml $(ROOT)/sim_build
 
 # ---------------------------------------------------------------------------
-# synth — Yosys synthesis to artifacts netlist (hdl_synth container)
+# synth — Yosys synthesis of stub RTL (hdl_synth / yosys container)
+# Reads rtl/spi_flash_ctrl_stub.sv via synth/top_synth.tcl;
+# log → artifacts/synth.log, netlist → artifacts/synth_out.v
 # ---------------------------------------------------------------------------
 synth:
-	@mkdir -p $(ARTIFACTS)
-	yosys -s $(SYNTH_DIR)/synth.ys
+	@mkdir -p artifacts
+	bash -o pipefail -c 'yosys synth/top_synth.tcl 2>&1 | tee artifacts/synth.log'
 
 clean: clean-sim-artifacts
 	rm -rf $(ARTIFACTS)/$(TOP)_netlist.v $(ARTIFACTS)/$(TOP)_synth.json \
+		$(ARTIFACTS)/synth_out.v \
 		$(ARTIFACTS)/lint.log $(ARTIFACTS)/synth.log
 	@# Keep artifacts/.gitkeep
 	@touch $(ARTIFACTS)/.gitkeep
