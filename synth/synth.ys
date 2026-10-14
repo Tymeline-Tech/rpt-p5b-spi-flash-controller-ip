@@ -1,0 +1,15 @@
+# Yosys synthesis script for spi_flash_ctrl (sky130-oriented generic synth)
+# Invoked from repository root: yosys -s synth/synth.ys
+read_verilog -sv rtl/spi_flash_ctrl.sv
+hierarchy -check -top spi_flash_ctrl
+proc
+opt
+fsm
+opt
+memory
+opt
+techmap
+opt
+write_verilog -noattr artifacts/spi_flash_ctrl_netlist.v
+write_json artifacts/spi_flash_ctrl_synth.json
+stat
