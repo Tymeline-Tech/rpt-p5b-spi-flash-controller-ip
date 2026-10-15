@@ -36,7 +36,7 @@ module spi_flash_ctrl (
     logic [7:0]  clk_div;
     logic [1:0]  spi_mode;
     logic        busy;
-    logic        done;
+    logic        spi_txn_complete;
 
     // -------------------------------------------------------------------------
     // FIFO-to-Reg / Reg-to-FIFO (APB side of FIFOs)
@@ -49,21 +49,21 @@ module spi_flash_ctrl (
     logic        rx_empty;
 
     // -------------------------------------------------------------------------
-    // SPI-to-FIFO / FIFO-to-SPI (engine side of FIFOs)
+    // SPI-to-FIFO / FIFO-to-SPI (engine side of FIFOs — valid/ready)
     // -------------------------------------------------------------------------
     logic [7:0]  tx_rd_data;
-    logic        tx_rd_en;
+    logic        tx_rd_ready;
     logic        tx_empty;
-    logic        tx_rd_valid;
+    logic        tx_rd_valid;   // tx_fifo_read_valid
     logic        tx_wr_ready;
 
     logic [7:0]  rx_wr_data;
-    logic        rx_wr_en;
+    logic        rx_wr_valid;   // rx_fifo_write_valid
     logic        rx_full;
     logic        rx_wr_ready;
     logic        rx_rd_valid;
 
-    // SPI master byte status (stub; not forwarded to APB yet)
+    // SPI master byte status (not forwarded to APB yet)
     logic [7:0]  spi_rx_data;
     logic        spi_rx_valid;
 
@@ -93,7 +93,7 @@ module spi_flash_ctrl (
         .rx_rd_en   (rx_rd_en),
         .rx_empty   (rx_empty),
         .busy             (busy),
-        .spi_txn_complete (done),
+        .spi_txn_complete (spi_txn_complete),
         .irq              (irq)
     );
 
@@ -109,7 +109,7 @@ module spi_flash_ctrl (
         .wr_valid (tx_wr_en),
         .wr_data  (tx_wr_data),
         .wr_ready (tx_wr_ready),
-        .rd_ready (tx_rd_en),
+        .rd_ready (tx_rd_ready),
         .rd_data  (tx_rd_data),
         .rd_valid (tx_rd_valid),
         .full     (tx_full),
@@ -125,7 +125,7 @@ module spi_flash_ctrl (
     ) u_rx_fifo (
         .clk      (clk),
         .rst_n    (rst_n),
-        .wr_valid (rx_wr_en),
+        .wr_valid (rx_wr_valid),
         .wr_data  (rx_wr_data),
         .wr_ready (rx_wr_ready),
         .rd_ready (rx_rd_en),
@@ -139,33 +139,33 @@ module spi_flash_ctrl (
     // Top-level SPI pins <-> SPI master; control/FIFO links to reg block
     // -------------------------------------------------------------------------
     spi_master u_spi_master (
-        .clk         (clk),
-        .rst_n       (rst_n),
-        .start       (start),
-        .cmd_byte    (cmd),
-        .addr_word   (addr),
-        .clk_div     (clk_div),
-        .spi_mode    (spi_mode),
-        .tx_rd_data  (tx_rd_data),
-        .tx_rd_empty (tx_empty),
-        .tx_rd_en    (tx_rd_en),
-        .rx_wr_data  (rx_wr_data),
-        .rx_wr_en    (rx_wr_en),
-        .rx_wr_full  (rx_full),
-        .busy        (busy),
-        .done        (done),
-        .rx_data     (spi_rx_data),
-        .rx_valid    (spi_rx_valid),
-        .sclk_out    (sclk),
-        .mosi_out    (mosi),
-        .miso_in     (miso),
-        .cs_n_out    (cs_n)
+        .clk              (clk),
+        .rst_n            (rst_n),
+        .start            (start),
+        .cmd_byte         (cmd),
+        .addr_word        (addr),
+        .clk_div          (clk_div),
+        .spi_mode         (spi_mode),
+        .tx_rd_data       (tx_rd_data),
+        .tx_rd_valid      (tx_rd_valid),
+        .tx_rd_ready      (tx_rd_ready),
+        .rx_wr_data       (rx_wr_data),
+        .rx_wr_valid      (rx_wr_valid),
+        .rx_wr_ready      (rx_wr_ready),
+        .busy             (busy),
+        .spi_txn_complete (spi_txn_complete),
+        .rx_data          (spi_rx_data),
+        .rx_valid         (spi_rx_valid),
+        .sclk_out         (sclk),
+        .mosi_out         (mosi),
+        .miso_in          (miso),
+        .cs_n_out         (cs_n)
     );
 
-    // Silence unused intermediate stub handshake / status nets
+    // Silence unused intermediate nets (APB-side FIFO ready/valid + byte status)
     logic unused_ok;
     always_comb begin
-        unused_ok = ^{tx_wr_ready, tx_rd_valid, rx_wr_ready, rx_rd_valid,
+        unused_ok = ^{tx_wr_ready, tx_empty, rx_full, rx_rd_valid,
                       spi_rx_data, spi_rx_valid};
     end
 

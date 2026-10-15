@@ -14,19 +14,19 @@ module spi_master (
     input  logic [7:0]  clk_div,
     input  logic [1:0]  spi_mode,
 
-    // TX FIFO read interface
+    // TX FIFO read interface (valid/ready)
     input  logic [7:0]  tx_rd_data,
-    input  logic        tx_rd_empty,
-    output logic        tx_rd_en,
+    input  logic        tx_rd_valid,   // tx_fifo_read_valid
+    output logic        tx_rd_ready,
 
-    // RX FIFO write interface
+    // RX FIFO write interface (valid/ready)
     output logic [7:0]  rx_wr_data,
-    output logic        rx_wr_en,
-    input  logic        rx_wr_full,
+    output logic        rx_wr_valid,   // rx_fifo_write_valid
+    input  logic        rx_wr_ready,
 
     // Status feedback
     output logic        busy,
-    output logic        done,
+    output logic        spi_txn_complete,
     output logic [7:0]  rx_data,
     output logic        rx_valid,
 
@@ -127,20 +127,20 @@ module spi_master (
     assign addr_bytes_total = (cmd_r == CMD_FAST_READ) ? FAST_ADDR_BYTES
                                                        : {1'b0, ADDR_BYTES};
 
-    // Phase completion helpers (byte counters + FIFO status)
+    // Phase completion helpers (byte counters + FIFO valid/ready)
     assign phase_cmd_done  = byte_done & (byte_cnt == {6'b0, CMD_BYTES} - 8'd1);
     assign phase_addr_done = byte_done & (byte_cnt == {5'b0, addr_bytes_total} - 8'd1);
     // TX: finish current byte and no further TX FIFO data
-    assign phase_tx_done   = byte_done & tx_rd_empty;
+    assign phase_tx_done   = byte_done & ~tx_rd_valid;
     // RX: either hit the target count, or (for multi-byte reads) exhaust TX dummies
     assign phase_rx_done   = byte_done & (
                                  (byte_cnt == (rx_bytes_total - 8'd1)) |
-                                 ((cmd_r == CMD_READ || cmd_r == CMD_FAST_READ) & tx_rd_empty)
+                                 ((cmd_r == CMD_READ || cmd_r == CMD_FAST_READ) & ~tx_rd_valid)
                              );
 
     assign enter_addr = has_addr;
-    assign enter_tx   = has_tx & ~tx_rd_empty;
-    assign enter_rx   = has_rx & ~rx_wr_full;
+    assign enter_tx   = has_tx & tx_rd_valid;
+    assign enter_rx   = has_rx & rx_wr_ready;
 
     // -------------------------------------------------------------------------
     // 2) Next-state logic (FIFO flags + byte counters)
@@ -188,8 +188,8 @@ module spi_master (
             end
 
             DATA_RX: begin
-                // Stall while RX FIFO is full; otherwise advance on phase_rx_done
-                if (!rx_wr_full && phase_rx_done) begin
+                // Stall while RX FIFO cannot accept; otherwise advance on phase_rx_done
+                if (rx_wr_ready && phase_rx_done) begin
                     next_state = DONE;
                 end
             end
@@ -231,9 +231,9 @@ module spi_master (
         end
     end
 
-    // Status from FSM
-    assign busy = (state != IDLE);
-    assign done = (state == DONE);
+    // Status from FSM — pulse spi_txn_complete while in DONE (one-cycle state)
+    assign busy             = (state != IDLE);
+    assign spi_txn_complete = (state == DONE);
 
     // -------------------------------------------------------------------------
     // Clock divider, Mode 0/3 edge selects, MOSI/MISO shifters, CS_N
@@ -302,7 +302,7 @@ module spi_master (
     assign shift_ev  = cpha ? pos_edge_i : neg_edge_i;
 
     // Hold clocks when the last MISO bit is ready but RX FIFO cannot accept it
-    assign rx_block = (state == DATA_RX) & (bit_cnt == 3'd7) & sample_ev & rx_wr_full;
+    assign rx_block = (state == DATA_RX) & (bit_cnt == 3'd7) & sample_ev & ~rx_wr_ready;
 
     // Avoid starting another byte once the phase completion condition is met
     always_comb begin
@@ -310,10 +310,10 @@ module spi_master (
         unique case (state)
             CMD_PHASE:  more_bytes_needed = (byte_cnt < {6'b0, CMD_BYTES});
             ADDR_PHASE: more_bytes_needed = (byte_cnt < {5'b0, addr_bytes_total});
-            DATA_TX:    more_bytes_needed = ~tx_rd_empty;
+            DATA_TX:    more_bytes_needed = tx_rd_valid;
             DATA_RX: begin
                 if (cmd_r == CMD_READ || cmd_r == CMD_FAST_READ) begin
-                    more_bytes_needed = ~tx_rd_empty;
+                    more_bytes_needed = tx_rd_valid;
                 end else begin
                     more_bytes_needed = (byte_cnt < rx_bytes_total);
                 end
@@ -354,16 +354,16 @@ module spi_master (
             mosi_shift    <= 8'h00;
             miso_partial  <= 7'h00;
             byte_done     <= 1'b0;
-            tx_rd_en      <= 1'b0;
-            rx_wr_en      <= 1'b0;
+            tx_rd_ready   <= 1'b0;
+            rx_wr_valid   <= 1'b0;
             rx_wr_data_r  <= 8'h00;
             rx_data_r     <= 8'h00;
             rx_valid_r    <= 1'b0;
         end else begin
-            byte_done  <= 1'b0;
-            tx_rd_en   <= 1'b0;
-            rx_wr_en   <= 1'b0;
-            rx_valid_r <= 1'b0;
+            byte_done    <= 1'b0;
+            tx_rd_ready  <= 1'b0;
+            rx_wr_valid  <= 1'b0;
+            rx_valid_r   <= 1'b0;
 
             // Latch divider / mode / address with the transaction
             if ((state == IDLE) && start) begin
@@ -386,15 +386,15 @@ module spi_master (
                     bit_cnt    <= 3'd0;
                     bit_active <= 1'b1;
 
-                    // Pop TX FIFO when sourcing a DATA_TX byte
-                    if (state == DATA_TX && !tx_rd_empty) begin
-                        tx_rd_en <= 1'b1;
+                    // Pop TX FIFO when sourcing a DATA_TX byte (tx_fifo_read_valid)
+                    if (state == DATA_TX && tx_rd_valid) begin
+                        tx_rd_ready <= 1'b1;
                     end
                     // Multi-byte reads: one TX dummy per RX beat (length control)
                     if (state == DATA_RX &&
                         (cmd_r == CMD_READ || cmd_r == CMD_FAST_READ) &&
-                        !tx_rd_empty) begin
-                        tx_rd_en <= 1'b1;
+                        tx_rd_valid) begin
+                        tx_rd_ready <= 1'b1;
                     end
                 end
             end else begin
@@ -416,9 +416,10 @@ module spi_master (
                             byte_done  <= 1'b1;
                             bit_active <= 1'b0;
                             miso_partial <= 7'h00;
+                            // Push sampled byte into RX FIFO (rx_fifo_write_valid)
                             if (state == DATA_RX) begin
                                 rx_wr_data_r <= miso_byte;
-                                rx_wr_en     <= 1'b1;
+                                rx_wr_valid  <= 1'b1;
                                 rx_data_r    <= miso_byte;
                                 rx_valid_r   <= 1'b1;
                             end
