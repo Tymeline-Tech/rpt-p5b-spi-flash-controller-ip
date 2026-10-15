@@ -3,9 +3,9 @@
 #
 # Self-check / platform gate:
 #   make lint      → artifacts/lint.log
-#   make simulate  → artifacts/simulation.log (+ artifacts/sim.log)
+#   make simulate  → artifacts/simulation.log (+ functional_coverage_report.md)
 #   make synth     → artifacts/synth.log
-# Cocotb vars: SIM=icarus TOPLEVEL=spi_flash_ctrl MODULE=testbench
+# Cocotb vars: SIM=icarus TOPLEVEL=spi_flash_ctrl MODULE=<comma-separated tests>
 # Each target is independently runnable in its toolchain container.
 
 ROOT        := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
@@ -21,20 +21,24 @@ RTL_FILES   := $(wildcard rtl/*.sv)
 RTL_SRCS    := $(abspath $(RTL_FILES))
 
 # Cocotb defaults (Icarus). Override on the command line, e.g. TESTCASE=test_reset.
-# Default MODULE: FIFO boundary / overflow stress (TX full + RX empty).
+# Default MODULE: full functional regression (all SPI cmds × Modes 0/3 + FIFO/IRQ).
 SIM         ?= icarus
 TOPLEVEL    ?= spi_flash_ctrl
-MODULE      ?= test_fifo_interrupt_stress
+MODULE      ?= test_read_status_commands,test_program_erase,test_fifo_interrupt_stress
 TESTCASE    ?=
+COVERAGE_REPORT := $(ARTIFACTS)/functional_coverage_report.md
+COVERAGE_SCRIPT := $(ROOT)/scripts/generate_coverage_report.py
 
-.PHONY: all lint simulate simulate-verilator synth clean clean-sim-artifacts help self-check
+.PHONY: all lint simulate simulate-verilator synth clean clean-sim-artifacts \
+	coverage-report help self-check
 
 all: lint simulate synth
 
 help:
-	@echo "Targets: lint | simulate | synth | self-check | clean"
+	@echo "Targets: lint | simulate | synth | coverage-report | self-check | clean"
 	@echo "simulate uses cocotb+Icarus: TOPLEVEL=$(TOPLEVEL) MODULE=$(MODULE)"
-	@echo "Artifacts: artifacts/lint.log, artifacts/simulation.log, artifacts/synth.log"
+	@echo "Artifacts: artifacts/lint.log, artifacts/simulation.log,"
+	@echo "           artifacts/functional_coverage_report.md, artifacts/synth.log"
 
 # ---------------------------------------------------------------------------
 # lint — Verilator lint-only (hdl_sim / verilator container)
@@ -89,13 +93,27 @@ simulate: clean-sim-artifacts
 	@if [ -f $(TB_COCOTB)/coverage.xml ]; then mv -f $(TB_COCOTB)/coverage.xml $(ROOT)/coverage.xml; fi
 	@if [ -f $(SIM_DIR)/coverage.xml ]; then mv -f $(SIM_DIR)/coverage.xml $(ROOT)/coverage.xml; fi
 	@if [ -f $(SIM_DIR)/sim_build/coverage.xml ]; then mv -f $(SIM_DIR)/sim_build/coverage.xml $(ROOT)/coverage.xml; fi
-	@echo "simulate: PASS (artifacts/simulation.log)"
+	@$(MAKE) coverage-report
+	@test -f $(COVERAGE_REPORT)
+	@echo "simulate: PASS (artifacts/simulation.log + functional_coverage_report.md)"
+
+# ---------------------------------------------------------------------------
+# coverage-report — parse cocotb logs → artifacts/functional_coverage_report.md
+# Requires artifacts/simulation*.log from a prior (or just-finished) simulate.
+# ---------------------------------------------------------------------------
+coverage-report:
+	@mkdir -p $(ARTIFACTS)
+	@test -f $(COVERAGE_SCRIPT)
+	python3 $(COVERAGE_SCRIPT) --artifacts $(ARTIFACTS) --output $(COVERAGE_REPORT) --require-100
+	@test -f $(COVERAGE_REPORT)
+	@echo "coverage-report: PASS ($(COVERAGE_REPORT))"
 
 clean-sim-artifacts:
 	# Delete stale sim logs, VCDs, ELF/build products so the next run is fresh.
 	rm -rf $(SIM_DIR)
 	rm -f $(ARTIFACTS)/sim.log $(ARTIFACTS)/simulation.log \
 		$(ARTIFACTS)/results.xml $(ARTIFACTS)/coverage.xml \
+		$(ARTIFACTS)/functional_coverage_report.md \
 		$(ROOT)/coverage.xml $(ROOT)/results.xml
 	rm -rf $(ROOT)/sim_build $(TB_DIR)/sim_build $(TB_COCOTB)/sim_build
 	rm -f $(TB_DIR)/*.vcd $(TB_DIR)/*.fst $(TB_DIR)/*.vvp \
