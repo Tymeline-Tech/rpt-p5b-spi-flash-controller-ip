@@ -84,7 +84,7 @@ simulate: dirs
 # ---------------------------------------------------------------------------
 synth: dirs
 	@echo "synth: yosys → $(NETLIST)"
-	@$(YOSYS) -q -p "\
+	@$(YOSYS) -p "\
 		read_verilog -sv $(RTL_SRCS); \
 		hierarchy -check -top $(TOP); \
 		proc; opt; fsm; opt; memory; opt; \
@@ -99,6 +99,8 @@ synth: dirs
 		exit $$ec; \
 	fi
 	@test -f $(NETLIST) || (echo "error: missing $(NETLIST)"; exit 1)
+	@grep -qiE '^ERROR:' $(SYNTH_LOG) && \
+		(echo "error: critical yosys ERROR in $(SYNTH_LOG)"; exit 1) || true
 	@echo "synth: OK" | tee -a $(SYNTH_LOG)
 
 clean:
