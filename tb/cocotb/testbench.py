@@ -1,8 +1,10 @@
 """Primary cocotb test module for spi_flash_ctrl (MODULE=testbench).
 
 Provides ``SpiFlashDUT``, a thin wrapper around the cocotb DUT handle that
-maps APB slave and SPI master ports to named Python attributes and offers a
-shared ``reset()`` coroutine. No behavioral flash model is required here.
+maps APB slave and SPI master ports to named Python attributes, offers a
+shared ``reset()`` coroutine, and an APB3 master driver (``apb_write`` /
+``apb_read``) with register-map helpers. No behavioral flash model is
+required for the APB driver itself.
 """
 
 import cocotb
@@ -23,6 +25,36 @@ from flash_model import (
     SpiNorFlash,
     SR_WEL,
 )
+
+# ---------------------------------------------------------------------------
+# Register map (byte offsets on PADDR) — matches rtl/spi_reg_block.sv
+# ---------------------------------------------------------------------------
+ADDR_CTRL = 0x00
+ADDR_STATUS = 0x04
+ADDR_CMD = 0x08
+ADDR_ADDR = 0x0C
+ADDR_DATA = 0x10  # TX FIFO write (APB write) / RX FIFO read (APB read)
+ADDR_CLKDIV = 0x14
+
+# Host-facing aliases (story / verification plan naming)
+REG_CTRL = ADDR_CTRL
+REG_STATUS = ADDR_STATUS
+REG_CMD = ADDR_CMD
+REG_ADDR = ADDR_ADDR
+REG_TX_DATA = ADDR_DATA
+REG_RX_DATA = ADDR_DATA
+REG_CFG = ADDR_CLKDIV
+REG_CLKDIV = ADDR_CLKDIV
+
+# CTRL bits: [0]=START, [2:1]=MODE
+CTRL_START = 0x1
+CTRL_MODE_SHIFT = 1
+
+# STATUS bits: [0]=BUSY, [1]=IRQ, [2]=TXF, [3]=RXE
+STATUS_BUSY = 0x1
+STATUS_IRQ = 0x2
+STATUS_TXF = 0x4
+STATUS_RXE = 0x8
 
 
 def _spi_transfer_byte(flash: SpiNorFlash, byte_val: int) -> None:
@@ -155,6 +187,124 @@ class SpiFlashDUT:
         self.presetn.value = 1
         await RisingEdge(self.pclk)
 
+    # ------------------------------------------------------------------
+    # APB3 master driver (PSEL / PENABLE / PWRITE setup → wait PREADY)
+    # ------------------------------------------------------------------
+    async def apb_write(self, addr: int, data: int) -> None:
+        """APB 3.0 write transfer to ``addr`` with ``data``.
+
+        Setup phase: PSEL=1, PENABLE=0, PWRITE=1, drive PADDR/PWDATA.
+        Access phase: PENABLE=1, wait until PREADY, then return to idle.
+        """
+        addr = int(addr) & 0xFFFFFFFF
+        data = int(data) & 0xFFFFFFFF
+
+        await RisingEdge(self.pclk)
+        self.psel.value = 1
+        self.penable.value = 0
+        self.pwrite.value = 1
+        self.paddr.value = addr
+        self.pwdata.value = data
+
+        await RisingEdge(self.pclk)
+        self.penable.value = 1
+
+        await RisingEdge(self.pclk)
+        while int(self.pready.value) == 0:
+            await RisingEdge(self.pclk)
+
+        self.psel.value = 0
+        self.penable.value = 0
+        self.pwrite.value = 0
+
+    async def apb_read(self, addr: int) -> int:
+        """APB 3.0 read transfer from ``addr``; return captured PRDATA.
+
+        Setup phase: PSEL=1, PENABLE=0, PWRITE=0, drive PADDR.
+        Access phase: PENABLE=1, wait until PREADY, sample PRDATA, idle.
+        """
+        addr = int(addr) & 0xFFFFFFFF
+
+        await RisingEdge(self.pclk)
+        self.psel.value = 1
+        self.penable.value = 0
+        self.pwrite.value = 0
+        self.paddr.value = addr
+        self.pwdata.value = 0
+
+        await RisingEdge(self.pclk)
+        self.penable.value = 1
+
+        await RisingEdge(self.pclk)
+        while int(self.pready.value) == 0:
+            await RisingEdge(self.pclk)
+
+        data = int(self.prdata.value) & 0xFFFFFFFF
+
+        self.psel.value = 0
+        self.penable.value = 0
+        return data
+
+    # ------------------------------------------------------------------
+    # Register helpers (CTRL / STATUS / CMD / ADDR / TX / RX / CFG)
+    # ------------------------------------------------------------------
+    async def write_ctrl(self, data: int) -> None:
+        """Write the CTRL register (START / MODE)."""
+        await self.apb_write(ADDR_CTRL, data)
+
+    async def write_cmd(self, cmd: int) -> None:
+        """Write the CMD register (SPI opcode)."""
+        await self.apb_write(ADDR_CMD, int(cmd) & 0xFF)
+
+    async def write_addr(self, addr: int) -> None:
+        """Write the ADDR register (24-bit flash address)."""
+        await self.apb_write(ADDR_ADDR, int(addr) & 0xFFFFFF)
+
+    async def write_tx_data(self, data: int) -> None:
+        """Push one byte into the TX FIFO via the DATA register."""
+        await self.apb_write(REG_TX_DATA, int(data) & 0xFF)
+
+    async def write_cfg(self, clk_div: int) -> None:
+        """Write the CFG / CLKDIV register."""
+        await self.apb_write(REG_CFG, int(clk_div) & 0xFF)
+
+    async def write_clkdiv(self, clk_div: int) -> None:
+        """Alias for ``write_cfg`` (matches RTL ``ADDR_CLKDIV``)."""
+        await self.write_cfg(clk_div)
+
+    async def read_status(self) -> int:
+        """Read the STATUS register."""
+        return await self.apb_read(ADDR_STATUS)
+
+    async def read_ctrl(self) -> int:
+        """Read the CTRL register."""
+        return await self.apb_read(ADDR_CTRL)
+
+    async def read_cmd(self) -> int:
+        """Read the CMD register."""
+        return await self.apb_read(ADDR_CMD)
+
+    async def read_addr(self) -> int:
+        """Read the ADDR register."""
+        return await self.apb_read(ADDR_ADDR)
+
+    async def read_rx_data(self) -> int:
+        """Pop one byte from the RX FIFO via the DATA register."""
+        return await self.apb_read(REG_RX_DATA) & 0xFF
+
+    async def read_cfg(self) -> int:
+        """Read the CFG / CLKDIV register."""
+        return await self.apb_read(REG_CFG)
+
+    async def clear_irq(self) -> None:
+        """Clear the pending interrupt by writing STATUS."""
+        await self.apb_write(ADDR_STATUS, 0xFFFFFFFF)
+
+    async def start_transaction(self, spi_mode: int = 0) -> None:
+        """Pulse CTRL.START with the given SPI mode (0 or 3)."""
+        mode = int(spi_mode) & 0x3
+        await self.write_ctrl(CTRL_START | (mode << CTRL_MODE_SHIFT))
+
 
 @cocotb.test()
 async def test_reset(dut):
@@ -172,6 +322,48 @@ async def test_reset(dut):
     assert int(tb.csn.value) == 1, "SPI CS should idle high after reset"
     assert int(tb.pready.value) == 1, "APB pready should be ready after reset"
     assert int(tb.irq.value) == 0, "IRQ should be clear after reset"
+
+
+@cocotb.test()
+async def test_apb_driver(dut):
+    """Exercise APB3 master driver against the register block.
+
+    Writes/reads CTRL, STATUS, CMD, ADDR, TX DATA, and CFG via
+    ``apb_write`` / ``apb_read`` and the register helpers. Does not
+    start an SPI transaction or require the flash model.
+    """
+    tb = SpiFlashDUT(dut)
+    _start_clock(tb.pclk)
+    await _timer_ns(20)
+    await tb.reset(cycles=11)
+
+    # STATUS after reset: RX empty, TX not full, IRQ clear, not busy
+    status = await tb.read_status()
+    assert status & STATUS_RXE, f"STATUS.RXE expected set after reset, got 0x{status:x}"
+    assert not (status & STATUS_BUSY), f"STATUS.BUSY unexpected after reset: 0x{status:x}"
+    assert not (status & STATUS_IRQ), f"STATUS.IRQ unexpected after reset: 0x{status:x}"
+    assert not (status & STATUS_TXF), f"STATUS.TXF unexpected after reset: 0x{status:x}"
+
+    # Program CMD / ADDR / CFG and read back through apb_read helpers
+    await tb.write_cmd(0x03)
+    await tb.write_addr(0xABCDEF)
+    await tb.write_cfg(0x04)
+    await tb.write_ctrl(0x2 << CTRL_MODE_SHIFT)  # mode=2, no START
+
+    assert await tb.read_cmd() == 0x03
+    assert await tb.read_addr() == 0xABCDEF
+    assert await tb.read_cfg() == 0x04
+    ctrl = await tb.read_ctrl()
+    assert (ctrl >> CTRL_MODE_SHIFT) & 0x3 == 0x2, f"CTRL.MODE mismatch: 0x{ctrl:x}"
+
+    # TX FIFO push via DATA register; STATUS should still show not-full
+    await tb.write_tx_data(0xA5)
+    status = await tb.apb_read(ADDR_STATUS)
+    assert not (status & STATUS_TXF), f"TX FIFO should not be full after one push: 0x{status:x}"
+
+    # Clear IRQ path (no pending interrupt expected)
+    await tb.clear_irq()
+    assert int(tb.irq.value) == 0
 
 
 @cocotb.test()
