@@ -4,7 +4,8 @@
 # Self-check / platform gate:
 #   make lint      → artifacts/lint.log
 #   make simulate  → artifacts/simulation.log (+ functional_coverage_report.md)
-#   make synth     → artifacts/synth.log
+#   make synth     → artifacts/synth.log + artifacts/synth.ilang
+#                    + docs/synthesis_report.md
 # Cocotb vars: SIM=icarus TOPLEVEL=spi_flash_ctrl MODULE=<comma-separated tests>
 # Each target is independently runnable in its toolchain container.
 
@@ -15,6 +16,15 @@ TB_COCOTB   := $(TB_DIR)/cocotb
 SYNTH_DIR   := $(ROOT)/synth
 ARTIFACTS   := $(ROOT)/artifacts
 SIM_DIR     := $(ARTIFACTS)/sim
+DOCS_DIR    := $(ROOT)/docs
+
+# Yosys Tcl flow for sky130 technology mapping (step-1 synth script)
+YOSYS_SCRIPT := synth/synth_skylake.tcl
+
+# Real sky130_fd_sc_hd liberty from the installed PDK (never commit a .lib).
+# PDK_ROOT must be set in the synth runner, e.g. to the open_pdks share/pdk root.
+SKY130_LIB_REL := sky130A/libs.ref/sky130_fd_sc_hd/lib/sky130_fd_sc_hd__tt_025C_1v80.lib
+SKY130_LIB     := $(PDK_ROOT)/$(SKY130_LIB_REL)
 
 TOP         := spi_flash_ctrl
 RTL_FILES   := $(wildcard rtl/*.sv)
@@ -28,6 +38,8 @@ MODULE      ?= test_read_status_commands,test_program_erase,test_fifo_interrupt_
 TESTCASE    ?=
 COVERAGE_REPORT := $(ARTIFACTS)/functional_coverage_report.md
 COVERAGE_SCRIPT := $(ROOT)/scripts/generate_coverage_report.py
+SYNTH_REPORT := $(DOCS_DIR)/synthesis_report.md
+SYNTH_REPORT_SCRIPT := $(ROOT)/scripts/generate_synthesis_report.py
 
 .PHONY: all lint simulate simulate-verilator synth clean clean-sim-artifacts \
 	coverage-report help self-check
@@ -37,8 +49,11 @@ all: lint simulate synth
 help:
 	@echo "Targets: lint | simulate | synth | coverage-report | self-check | clean"
 	@echo "simulate uses cocotb+Icarus: TOPLEVEL=$(TOPLEVEL) MODULE=$(MODULE)"
+	@echo "synth requires PDK_ROOT (sky130 liberty under \$$PDK_ROOT/$(SKY130_LIB_REL))"
 	@echo "Artifacts: artifacts/lint.log, artifacts/simulation.log,"
-	@echo "           artifacts/functional_coverage_report.md, artifacts/synth.log"
+	@echo "           artifacts/functional_coverage_report.md,"
+	@echo "           artifacts/synth.log, artifacts/synth.ilang,"
+	@echo "           docs/synthesis_report.md"
 
 # ---------------------------------------------------------------------------
 # lint — Verilator lint-only (hdl_sim / verilator container)
@@ -122,15 +137,35 @@ clean-sim-artifacts:
 
 # ---------------------------------------------------------------------------
 # synth — Yosys synthesis of the RTL hierarchy (hdl_synth / yosys container)
-# Reads every rtl/*.sv (top: spi_flash_ctrl) via synth/top_synth.tcl;
-# log → artifacts/synth.log, netlist → artifacts/synth_out.v
+# sky130 flow: $(YOSYS_SCRIPT) (top: spi_flash_ctrl)
+#   synth -flatten → dfflibmap → abc → opt_clean → stat (all vs TT liberty)
+# Requires PDK_ROOT (real sky130 liberty; never a committed .lib).
+# log → artifacts/synth.log, netlist → artifacts/synth.ilang
+# mapped verilog → artifacts/spi_flash_ctrl_mapped.v
+# report → docs/synthesis_report.md (resource / quality-gate summary)
 # ---------------------------------------------------------------------------
 synth:
-	@mkdir -p artifacts
-	bash -o pipefail -c 'yosys synth/top_synth.tcl 2>&1 | tee artifacts/synth.log'
+	@if [ -z "$(PDK_ROOT)" ]; then \
+		echo "error: PDK_ROOT is unset. Set PDK_ROOT to the sky130 PDK root" >&2; \
+		echo "       (liberty at \$$PDK_ROOT/$(SKY130_LIB_REL))." >&2; \
+		exit 1; \
+	fi
+	@if [ ! -f "$(SKY130_LIB)" ]; then \
+		echo "error: sky130 liberty not found: $(SKY130_LIB)" >&2; \
+		echo "       Check PDK_ROOT=$(PDK_ROOT)" >&2; \
+		exit 1; \
+	fi
+	@mkdir -p artifacts docs
+	@touch artifacts/.gitkeep
+	bash -o pipefail -c 'export PDK_ROOT="$(PDK_ROOT)"; yosys -l artifacts/synth.log -c $(YOSYS_SCRIPT)'
 	@test -f artifacts/synth.log
-	@test -f artifacts/synth_out.v
-	@echo "synth: PASS (artifacts/synth.log)"
+	@test -f artifacts/synth.ilang
+	python3 $(SYNTH_REPORT_SCRIPT) \
+		--log artifacts/synth.log \
+		--ilang artifacts/synth.ilang \
+		--out $(SYNTH_REPORT)
+	@test -f $(SYNTH_REPORT)
+	@echo "synth: PASS (artifacts/synth.log + artifacts/synth.ilang + docs/synthesis_report.md)"
 
 # Local end-to-end regression (not used by the platform gate; each gate
 # command still runs independently in its own toolchain container).
@@ -149,7 +184,8 @@ simulate-verilator:
 
 clean: clean-sim-artifacts
 	rm -rf $(ARTIFACTS)/$(TOP)_netlist.v $(ARTIFACTS)/$(TOP)_synth.json \
-		$(ARTIFACTS)/synth_out.v \
+		$(ARTIFACTS)/synth_out.v $(ARTIFACTS)/synth.ilang \
+		$(ARTIFACTS)/spi_flash_ctrl_mapped.v \
 		$(ARTIFACTS)/lint.log $(ARTIFACTS)/synth.log
 	@# Keep artifacts/.gitkeep
 	@touch $(ARTIFACTS)/.gitkeep

@@ -32,6 +32,10 @@ results.xml
 *.edif
 *.dot
 
+# Never commit liberty / PDK cell libraries (use $(PDK_ROOT) at synth time)
+*.lib
+synth/lib/
+
 # Editor and IDE
 .idea/
 .vscode/
