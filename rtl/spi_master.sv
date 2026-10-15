@@ -1,6 +1,7 @@
 // SPI Master Engine — Modes 0/3 with clock divider and shift registers
-// FSM sequences CMD / ADDR / DATA_TX / DATA_RX; this module also generates
-// SCLK, drives MOSI (MSB first), samples MISO, and manages CS_N.
+// FSM sequences CMD / ADDR / DATA_TX / DATA_RX; generates SCLK, drives MOSI
+// (MSB first), samples MISO, and manages CS_N. TX/RX FIFO ports use
+// valid/ready; spi_txn_complete pulses in DONE.
 `timescale 1ns/1ps
 
 module spi_master (
