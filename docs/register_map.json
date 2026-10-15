@@ -30,7 +30,7 @@
     {
       "name": "STATUS",
       "offset": "0x04",
-      "reset": "0x00000008",
+      "reset": "0x00000018",
       "fields": [
         {
           "name": "BUSY",
@@ -59,6 +59,20 @@
           "access": "RO",
           "reset": 1,
           "desc": "RX FIFO empty"
+        },
+        {
+          "name": "TXE",
+          "bits": "4",
+          "access": "RO",
+          "reset": 1,
+          "desc": "TX FIFO empty"
+        },
+        {
+          "name": "RXF",
+          "bits": "5",
+          "access": "RO",
+          "reset": 0,
+          "desc": "RX FIFO full"
         }
       ]
     },

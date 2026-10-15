@@ -31,7 +31,7 @@ unmapped offset returns `0x0000_0000` with `perror = 1`.
 | Offset | Name | Access | Reset | Description |
 | --- | --- | --- | --- | --- |
 | 0x00 | CTRL | RW | 0x0000_0000 | Start pulse and SPI mode |
-| 0x04 | STATUS | RO, write clears IRQ | see below | Engine and FIFO status, interrupt pending |
+| 0x04 | STATUS | RO, write clears IRQ | 0x0000_0018 | Engine and FIFO status, interrupt pending |
 | 0x08 | CMD | RW | 0x0000_0000 | SPI opcode for the next transaction |
 | 0x0C | ADDR | RW | 0x0000_0000 | 24-bit flash address for the next transaction |
 | 0x10 | DATA | W: push TX FIFO / R: pop RX FIFO | — | FIFO data port |
@@ -69,7 +69,9 @@ Side effects:
 
 | Bits | Field | Access | Reset | Description |
 | --- | --- | --- | --- | --- |
-| 31:4 | — | RAZ/WI | 0 | Reserved |
+| 31:6 | — | RAZ/WI | 0 | Reserved |
+| 5 | RXF | RO | 0 | RX FIFO full |
+| 4 | TXE | RO | 1 | TX FIFO empty |
 | 3 | RXE | RO | 1 | RX FIFO empty |
 | 2 | TXF | RO | 0 | TX FIFO full |
 | 1 | IRQ | RO, cleared by any write to STATUS | 0 | Transaction-complete interrupt pending. Mirrors the `irq` pin |
@@ -83,7 +85,7 @@ Side effects:
   as `0x2` does, so this is "write-any-to-clear", not write-1-to-clear.
 - If a transaction completes in the same cycle as a STATUS write, the
   completion wins and IRQ stays set.
-- The reset value of RXE is 1 because both FIFOs reset empty.
+- The reset values of RXE and TXE are 1 because both FIFOs reset empty.
 
 ### 3.3 CMD — 0x08
 
@@ -217,7 +219,7 @@ flashes generally support only Modes 0 and 3. Do not use them.
 | Register | Reset value |
 | --- | --- |
 | CTRL | 0x0000_0000 (Mode 0) |
-| STATUS | 0x0000_0008 (RXE = 1) |
+| STATUS | 0x0000_0018 (RXE = 1, TXE = 1) |
 | CMD | 0x0000_0000 |
 | ADDR | 0x0000_0000 |
 | CLKDIV | 0x0000_0000 (f_clk / 2) |
