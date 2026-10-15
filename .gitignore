@@ -32,15 +32,6 @@ results.xml
 *.edif
 *.dot
 
-# OpenROAD prepare / P&R run outputs (keep directory placeholders)
-pr_flow/results/*
-!pr_flow/results/.gitkeep
-pr_flow/reports/*
-!pr_flow/reports/.gitkeep
-*.odb
-*.def
-!pr_flow/**/.gitkeep
-
 # Never commit liberty / PDK cell libraries (use $(PDK_ROOT) at synth time)
 *.lib
 synth/lib/
