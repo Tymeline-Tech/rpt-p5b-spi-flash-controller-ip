@@ -22,7 +22,7 @@ TB_SRCS      := $(TB_DIR)/tb_spi_flash_ctrl.sv
 LINT_LOG     := $(ART_DIR)/lint.log
 SIM_LOG      := $(ART_DIR)/simulate.log
 SYNTH_LOG    := $(ART_DIR)/synth.log
-NETLIST      := $(ART_DIR)/$(TOP)_netlist.v
+NETLIST      := $(ART_DIR)/netlist.v
 SIM_BIN_DIR  := $(ART_DIR)/sim_obj
 SIM_BIN      := $(SIM_BIN_DIR)/V$(TB)
 

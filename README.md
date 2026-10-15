@@ -9,7 +9,7 @@ toolchain (Verilator, Icarus/cocotb, Yosys).
 ```bash
 make lint       # Verilator --lint-only -Wall
 make simulate   # Verilator --binary --assert --trace smoke test
-make synth      # Yosys → artifacts/spi_flash_ctrl_netlist.v
+make synth      # Yosys → artifacts/netlist.v
 ```
 
 ## RTL layout

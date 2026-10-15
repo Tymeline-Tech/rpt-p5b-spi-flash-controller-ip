@@ -1,11 +1,13 @@
-// SPI Flash Controller top-level — wires APB register block, FIFOs, and SPI master stubs.
+// SPI Flash Controller top-level — stub interconnect
+// Instantiates spi_reg_block, spi_tx_fifo, spi_rx_fifo, and spi_master,
+// and wires APB (host) and SPI (flash) pins through those stubs.
 `timescale 1ns/1ps
 
 module spi_flash_ctrl (
     input  logic        clk,
     input  logic        rst_n,
 
-    // APB3 slave
+    // APB3 slave (host)
     input  logic        psel,
     input  logic        penable,
     input  logic        pwrite,
@@ -18,14 +20,16 @@ module spi_flash_ctrl (
     // Interrupt
     output logic        irq,
 
-    // SPI master pins
+    // SPI master (external flash)
     output logic        sclk,
     output logic        mosi,
     input  logic        miso,
     output logic        cs_n
 );
 
-    // Reg-block <-> SPI master control
+    // -------------------------------------------------------------------------
+    // Reg-to-SPI control / status
+    // -------------------------------------------------------------------------
     logic        start;
     logic [7:0]  cmd;
     logic [23:0] addr;
@@ -34,30 +38,38 @@ module spi_flash_ctrl (
     logic        busy;
     logic        done;
 
-    // TX FIFO
+    // -------------------------------------------------------------------------
+    // FIFO-to-Reg / Reg-to-FIFO (APB side of FIFOs)
+    // -------------------------------------------------------------------------
     logic [7:0]  tx_wr_data;
     logic        tx_wr_en;
     logic        tx_full;
-    logic        tx_empty;
+    logic [7:0]  rx_rd_data;
+    logic        rx_rd_en;
+    logic        rx_empty;
+
+    // -------------------------------------------------------------------------
+    // SPI-to-FIFO / FIFO-to-SPI (engine side of FIFOs)
+    // -------------------------------------------------------------------------
     logic [7:0]  tx_rd_data;
     logic        tx_rd_en;
+    logic        tx_empty;
     logic        tx_rd_valid;
     logic        tx_wr_ready;
 
-    // RX FIFO
     logic [7:0]  rx_wr_data;
     logic        rx_wr_en;
     logic        rx_full;
-    logic        rx_empty;
-    logic [7:0]  rx_rd_data;
-    logic        rx_rd_en;
-    logic        rx_rd_valid;
     logic        rx_wr_ready;
+    logic        rx_rd_valid;
 
-    // Unused SPI master status (stub)
+    // SPI master byte status (stub; not forwarded to APB yet)
     logic [7:0]  spi_rx_data;
     logic        spi_rx_valid;
 
+    // -------------------------------------------------------------------------
+    // APB-to-Reg: top-level APB pins drive the register block
+    // -------------------------------------------------------------------------
     spi_reg_block u_reg_block (
         .clk        (clk),
         .rst_n      (rst_n),
@@ -85,6 +97,9 @@ module spi_flash_ctrl (
         .irq        (irq)
     );
 
+    // -------------------------------------------------------------------------
+    // TX FIFO: Reg write port <-> SPI master read port (16 x 8)
+    // -------------------------------------------------------------------------
     spi_tx_fifo #(
         .DEPTH (16),
         .WIDTH (8)
@@ -101,6 +116,9 @@ module spi_flash_ctrl (
         .empty    (tx_empty)
     );
 
+    // -------------------------------------------------------------------------
+    // RX FIFO: SPI master write port <-> Reg read port (16 x 8)
+    // -------------------------------------------------------------------------
     spi_rx_fifo #(
         .DEPTH (16),
         .WIDTH (8)
@@ -117,6 +135,9 @@ module spi_flash_ctrl (
         .empty    (rx_empty)
     );
 
+    // -------------------------------------------------------------------------
+    // Top-level SPI pins <-> SPI master; control/FIFO links to reg block
+    // -------------------------------------------------------------------------
     spi_master u_spi_master (
         .clk         (clk),
         .rst_n       (rst_n),
@@ -141,7 +162,7 @@ module spi_flash_ctrl (
         .cs_n_out    (cs_n)
     );
 
-    // Silence unused intermediate stub signals at top
+    // Silence unused intermediate stub handshake / status nets
     logic unused_ok;
     always_comb begin
         unused_ok = ^{tx_wr_ready, tx_rd_valid, rx_wr_ready, rx_rd_valid,
