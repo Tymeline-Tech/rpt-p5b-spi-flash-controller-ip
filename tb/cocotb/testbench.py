@@ -347,20 +347,33 @@ async def spi_flash_bridge(tb: SpiFlashDUT, flash_model: SpiNorFlash):
 
         if prev_csn == 1 and csn == 0:
             flash_model.begin_transaction()
+            # Sync edge detector to the Mode 0/3 idle level so the first
+            # real SCLK edge is not missed or double-detected (Mode 3 idles high).
+            flash_model._prev_sclk = sclk
         elif prev_csn == 0 and csn == 1:
             flash_model.reset_transaction()
 
         if csn == 0:
             prev_state = flash_model.state
+            prev_dummy = flash_model.dummy_cycles_remaining
             flash_model.process_sclk_mosi(sclk, mosi)
 
-            # Prime first MISO bit as soon as DATA is entered (no dummy left).
-            if (
+            # Prime first MISO bit when a MISO-producing DATA phase becomes
+            # ready: either on COMMAND/ADDRESS → DATA (Read/RDSR), or when
+            # Fast Read dummy clocks count down to zero.
+            entered_data = (
                 prev_state is not FlashState.DATA
                 and flash_model.state is FlashState.DATA
-                and flash_model.command
+            )
+            dummy_done = (
+                prev_dummy > 0 and flash_model.dummy_cycles_remaining == 0
+            )
+            if (
+                flash_model.command
                 in (CMD_READ, CMD_FAST_READ, CMD_READ_STATUS)
+                and flash_model.state is FlashState.DATA
                 and flash_model.dummy_cycles_remaining == 0
+                and (entered_data or dummy_done)
             ):
                 flash_model._clock_miso()
 

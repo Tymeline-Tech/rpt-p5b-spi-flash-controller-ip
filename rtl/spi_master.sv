@@ -133,10 +133,13 @@ module spi_master (
     assign phase_addr_done = byte_done & (byte_cnt == {5'b0, addr_bytes_total} - 8'd1);
     // TX: finish current byte and no further TX FIFO data
     assign phase_tx_done   = byte_done & ~tx_rd_valid;
-    // RX: either hit the target count, or (for multi-byte reads) exhaust TX dummies
+    // RX: RDSR (etc.) uses rx_bytes_total; Read/Fast Read length is governed
+    // solely by TX dummy exhaustion — do NOT also trip on rx_bytes_total or a
+    // multi-byte read ends after the first beat while dummies remain.
     assign phase_rx_done   = byte_done & (
-                                 (byte_cnt == (rx_bytes_total - 8'd1)) |
-                                 ((cmd_r == CMD_READ || cmd_r == CMD_FAST_READ) & ~tx_rd_valid)
+                                 (cmd_r == CMD_READ || cmd_r == CMD_FAST_READ)
+                                     ? ~tx_rd_valid
+                                     : (byte_cnt == (rx_bytes_total - 8'd1))
                              );
 
     assign enter_addr = has_addr;
@@ -381,7 +384,11 @@ module spi_master (
             end else if (!bit_active) begin
                 div_cnt       <= 8'h00;
                 sclk_internal <= 1'b0;
-                if (more_bytes_needed) begin
+                // Hold off starting a new byte while byte_done is still set from
+                // the previous cycle. Without this, CMD/ADDR phase completion
+                // re-loads the prior phase's byte (duplicate opcode on MOSI)
+                // because `state` updates one cycle after `byte_done`/`next_state`.
+                if (more_bytes_needed && !byte_done) begin
                     // Load MOSI shift register (MSB first) before the first edge
                     mosi_shift <= load_data;
                     bit_cnt    <= 3'd0;

@@ -23,7 +23,8 @@ COCOTB_TESTCASE      ?= $(TESTCASE)
 export COCOTB_REDUCED_LOG_FMT ?= 1
 export SIM
 
-# Ensure the Python test module in this directory is importable.
-export PYTHONPATH := $(abspath $(dir $(lastword $(MAKEFILE_LIST)))):$(PYTHONPATH)
+# Ensure tb/ (command tests) and tb/cocotb/ (DUT wrapper + flash model) import.
+TB_ROOT              := $(abspath $(dir $(lastword $(MAKEFILE_LIST)))/..)
+export PYTHONPATH := $(TB_ROOT):$(abspath $(dir $(lastword $(MAKEFILE_LIST)))):$(PYTHONPATH)
 
 include $(shell cocotb-config --makefiles)/Makefile.sim
