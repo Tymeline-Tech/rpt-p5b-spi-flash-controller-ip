@@ -1,16 +1,22 @@
-"""SPI NOR flash behavioral model — core memory and state logic.
+"""SPI NOR flash behavioral model — core memory, SPI sampling, and decode.
 
 Provides a cycle-accurate Python class representing an external SPI NOR flash
 device for independent verification of ``spi_flash_ctrl``. This module owns
-the internal memory array, the SPI transaction state machine, and Write Enable
-(WEL) latch logic. SPI signal sampling / command decode and MISO drive are
-added in later steps.
+the internal memory array, the SPI transaction state machine, Write Enable
+(WEL) latch logic, and SCLK/MOSI bit assembly with command decoding. MISO
+drive is added in a later step.
 """
 
 from enum import Enum, auto
 
 # 128 KiB device image
 MEMORY_SIZE = 128 * 1024
+
+# 4 KiB sector size for opcode 0x20 (Sector Erase)
+SECTOR_SIZE = 4 * 1024
+
+# 256-byte page for Page Program address wrap
+PAGE_SIZE = 256
 
 # Supported SPI NOR opcodes (project command set)
 CMD_READ = 0x03
@@ -24,6 +30,9 @@ CMD_WRITE_ENABLE = 0x06
 SR_WIP = 0x01  # bit 0 — write in progress
 SR_WEL = 0x02  # bit 1 — write enable latch
 
+# Fast Read: one dummy byte = 8 SCLK cycles after the 24-bit address
+FAST_READ_DUMMY_CYCLES = 8
+
 
 class FlashState(Enum):
     """Master SPI frame state machine tracked by the flash model."""
@@ -35,7 +44,7 @@ class FlashState(Enum):
 
 
 class SpiNorFlash:
-    """Behavioral SPI NOR flash: memory array, WEL, and SPI state machine.
+    """Behavioral SPI NOR flash: memory, WEL, SPI sampling, and command decode.
 
     Parameters
     ----------
@@ -47,11 +56,17 @@ class SpiNorFlash:
         self.wel = 0
         self.wip = 0
         self.state = FlashState.IDLE
-        # Transaction context (filled by later SPI decode steps)
+        # Transaction context
         self.command = 0
         self.address = 0
         self.addr_byte_count = 0
         self.dummy_cycles_remaining = 0
+        # SCLK/MOSI bit assembly (MSB-first; sample on rising SCLK)
+        self._prev_sclk = 0
+        self._bit_count = 0
+        self._shift_in = 0
+        # Page Program: armed for the rest of the CS frame after WEL accepted
+        self._pp_armed = False
 
     # ------------------------------------------------------------------
     # Memory helpers
@@ -122,6 +137,10 @@ class SpiNorFlash:
         self.address = 0
         self.addr_byte_count = 0
         self.dummy_cycles_remaining = 0
+        self._bit_count = 0
+        self._shift_in = 0
+        self._pp_armed = False
+        # Leave _prev_sclk as-is so the next CS frame sees a correct edge.
 
     def begin_transaction(self) -> None:
         """Enter COMMAND on chip-select assert (start of a new SPI frame)."""
@@ -130,6 +149,9 @@ class SpiNorFlash:
         self.address = 0
         self.addr_byte_count = 0
         self.dummy_cycles_remaining = 0
+        self._bit_count = 0
+        self._shift_in = 0
+        self._pp_armed = False
 
     def advance_to_address(self) -> None:
         """Transition COMMAND → ADDRESS for opcodes that take a 24-bit address."""
@@ -154,3 +176,138 @@ class SpiNorFlash:
         """Handle Write Enable (0x06): set WEL while in COMMAND/IDLE path."""
         self.set_write_enable()
         self.command = CMD_WRITE_ENABLE
+
+    # ------------------------------------------------------------------
+    # SCLK / MOSI sampling and command decoding
+    # ------------------------------------------------------------------
+
+    def process_sclk_mosi(self, sclk_val, mosi_val) -> None:
+        """Process one SCLK sample with MOSI; call on every SCLK delta.
+
+        Samples MOSI on the rising edge of SCLK (correct for SPI modes 0 and
+        3), assembles bits MSB-first into bytes, and advances the SPI state
+        machine: Command → Address → Data/Status. Handles:
+
+        * ``0x06`` Write Enable — sets ``self.wel = 1``
+        * ``0x20`` Sector Erase — erases a 4 KiB sector if WEL, then clears WEL
+        * ``0x02`` Page Program — programs data bytes if WEL was set, then
+          clears WEL (armed for the remainder of the CS frame)
+        * ``0x03`` / ``0x0B`` Read / Fast Read — address then data (Fast Read
+          consumes ``FAST_READ_DUMMY_CYCLES`` clocks before data)
+        * ``0x05`` Read Status — enters DATA for status clock-out
+        """
+        sclk = int(sclk_val) & 1
+        mosi = int(mosi_val) & 1
+        rising = self._prev_sclk == 0 and sclk == 1
+        self._prev_sclk = sclk
+
+        if not rising or self.state is FlashState.IDLE:
+            return
+
+        # Fast Read dummy clocks: count rising edges, do not assemble bytes.
+        if (
+            self.state is FlashState.DATA
+            and self.dummy_cycles_remaining > 0
+        ):
+            self.dummy_cycles_remaining -= 1
+            return
+
+        # Shift in MSB first.
+        self._shift_in = ((self._shift_in << 1) | mosi) & 0xFF
+        self._bit_count += 1
+        if self._bit_count < 8:
+            return
+
+        byte_val = self._shift_in
+        self._bit_count = 0
+        self._shift_in = 0
+        self._on_byte_received(byte_val)
+
+    def _on_byte_received(self, byte_val: int) -> None:
+        """Dispatch a completed MOSI byte according to the SPI state machine."""
+        if self.state is FlashState.COMMAND:
+            self._decode_command_byte(byte_val)
+        elif self.state is FlashState.ADDRESS:
+            self._accumulate_address_byte(byte_val)
+        elif self.state is FlashState.DATA:
+            self._handle_data_byte(byte_val)
+
+    def _decode_command_byte(self, cmd: int) -> None:
+        """Identify the opcode and transition Command → Address / Data."""
+        self.command = int(cmd) & 0xFF
+
+        if self.command == CMD_WRITE_ENABLE:
+            self.wel = 1
+            # Command-only; remain in COMMAND until CSN deassert.
+            return
+
+        if self.command == CMD_READ_STATUS:
+            self.advance_to_data(dummy_cycles=0)
+            return
+
+        if self.command in (
+            CMD_READ,
+            CMD_FAST_READ,
+            CMD_PAGE_PROGRAM,
+            CMD_SECTOR_ERASE,
+        ):
+            self.advance_to_address()
+            return
+
+        # Unsupported opcode: stay in COMMAND (bits still framed).
+
+    def _accumulate_address_byte(self, byte_val: int) -> None:
+        """Collect a 24-bit address MSB-first; then enter DATA or erase."""
+        self.address = ((self.address << 8) | (int(byte_val) & 0xFF)) & 0xFFFFFF
+        self.addr_byte_count += 1
+        if self.addr_byte_count < 3:
+            return
+
+        if self.command == CMD_SECTOR_ERASE:
+            if self.wel:
+                self._sector_erase(self.address)
+                self.wel = 0
+            # No data phase after sector erase.
+            self.state = FlashState.DATA
+            self.dummy_cycles_remaining = 0
+            return
+
+        if self.command == CMD_FAST_READ:
+            self.advance_to_data(dummy_cycles=FAST_READ_DUMMY_CYCLES)
+            return
+
+        if self.command == CMD_PAGE_PROGRAM:
+            # Accept PP if WEL is set; clear WEL once the op is accepted.
+            self._pp_armed = bool(self.wel)
+            if self._pp_armed:
+                self.wel = 0
+            self.advance_to_data(dummy_cycles=0)
+            return
+
+        # CMD_READ and any other addressed opcode.
+        self.advance_to_data(dummy_cycles=0)
+
+    def _handle_data_byte(self, byte_val: int) -> None:
+        """Consume a data-phase MOSI byte (Page Program writes; reads ignore)."""
+        if self.command == CMD_PAGE_PROGRAM and self._pp_armed:
+            addr = self._clamp_addr(self.address)
+            # NOR flash program can only clear bits (AND with existing data).
+            self.memory[addr] = self.memory[addr] & (int(byte_val) & 0xFF)
+            # Advance within the current 256-byte page (typical NOR wrap).
+            page_base = addr & ~(PAGE_SIZE - 1)
+            next_off = ((addr + 1) & (PAGE_SIZE - 1))
+            self.address = page_base | next_off
+            return
+
+        if self.command in (CMD_READ, CMD_FAST_READ):
+            # MOSI is don't-care; advance the read pointer for later MISO drive.
+            self.address = (self.address + 1) & 0xFFFFFF
+            return
+
+        # CMD_READ_STATUS / post-erase DATA: ignore further MOSI bytes.
+
+    def _sector_erase(self, addr: int) -> None:
+        """Erase the 4 KiB sector containing ``addr`` (set bytes to 0xFF)."""
+        base = self._clamp_addr(addr) & ~(SECTOR_SIZE - 1)
+        for i in range(SECTOR_SIZE):
+            self.memory[(base + i) & (MEMORY_SIZE - 1)] = 0xFF

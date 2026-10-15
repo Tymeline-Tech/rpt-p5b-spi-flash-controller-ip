@@ -10,12 +10,34 @@ from cocotb.clock import Clock
 from cocotb.triggers import RisingEdge, Timer
 
 from flash_model import (
+    CMD_FAST_READ,
+    CMD_PAGE_PROGRAM,
+    CMD_READ,
+    CMD_READ_STATUS,
+    CMD_SECTOR_ERASE,
     CMD_WRITE_ENABLE,
+    FAST_READ_DUMMY_CYCLES,
     MEMORY_SIZE,
+    SECTOR_SIZE,
     FlashState,
     SpiNorFlash,
     SR_WEL,
 )
+
+
+def _spi_transfer_byte(flash: SpiNorFlash, byte_val: int) -> None:
+    """Drive eight MOSI bits MSB-first, sampling on rising SCLK (Mode 0/3)."""
+    for i in range(7, -1, -1):
+        bit = (int(byte_val) >> i) & 1
+        flash.process_sclk_mosi(0, bit)
+        flash.process_sclk_mosi(1, bit)
+
+
+def _spi_dummy_clocks(flash: SpiNorFlash, n: int, mosi: int = 0) -> None:
+    """Toggle SCLK ``n`` times (rising-edge samples) without meaningful MOSI."""
+    for _ in range(int(n)):
+        flash.process_sclk_mosi(0, mosi)
+        flash.process_sclk_mosi(1, mosi)
 
 
 def _start_clock(signal, period_ns=10):
@@ -214,6 +236,108 @@ async def test_flash_model_unit(dut):
     assert flash.state is FlashState.IDLE
     # WEL is independent of CSN / transaction reset
     assert flash.wel == 1
+
+    # --- process_sclk_mosi: Write Enable (0x06) -----------------------------
+    flash.clear_write_enable()
+    flash.begin_transaction()
+    _spi_transfer_byte(flash, CMD_WRITE_ENABLE)
+    assert flash.wel == 1
+    assert flash.command == CMD_WRITE_ENABLE
+    assert flash.state is FlashState.COMMAND
+    flash.reset_transaction()
+
+    # --- process_sclk_mosi: Read Status (0x05) → DATA -----------------------
+    flash.begin_transaction()
+    _spi_transfer_byte(flash, CMD_READ_STATUS)
+    assert flash.command == CMD_READ_STATUS
+    assert flash.state is FlashState.DATA
+    flash.reset_transaction()
+
+    # --- process_sclk_mosi: Read (0x03) Command → Address → Data ------------
+    flash.begin_transaction()
+    _spi_transfer_byte(flash, CMD_READ)
+    assert flash.state is FlashState.ADDRESS
+    _spi_transfer_byte(flash, 0x00)
+    _spi_transfer_byte(flash, 0x12)
+    assert flash.addr_byte_count == 2
+    _spi_transfer_byte(flash, 0x34)
+    assert flash.address == 0x001234
+    assert flash.state is FlashState.DATA
+    assert flash.dummy_cycles_remaining == 0
+    flash.reset_transaction()
+
+    # --- process_sclk_mosi: Fast Read (0x0B) with dummy cycles --------------
+    flash.begin_transaction()
+    _spi_transfer_byte(flash, CMD_FAST_READ)
+    _spi_transfer_byte(flash, 0x00)
+    _spi_transfer_byte(flash, 0x00)
+    _spi_transfer_byte(flash, 0x10)
+    assert flash.state is FlashState.DATA
+    assert flash.dummy_cycles_remaining == FAST_READ_DUMMY_CYCLES
+    _spi_dummy_clocks(flash, FAST_READ_DUMMY_CYCLES)
+    assert flash.dummy_cycles_remaining == 0
+    flash.reset_transaction()
+
+    # --- process_sclk_mosi: Page Program (0x02) requires WEL ----------------
+    # Without WEL: memory must not change.
+    prog_addr = 0x3000
+    flash.write_byte(prog_addr, 0xFF)
+    flash.clear_write_enable()
+    flash.begin_transaction()
+    _spi_transfer_byte(flash, CMD_PAGE_PROGRAM)
+    _spi_transfer_byte(flash, (prog_addr >> 16) & 0xFF)
+    _spi_transfer_byte(flash, (prog_addr >> 8) & 0xFF)
+    _spi_transfer_byte(flash, prog_addr & 0xFF)
+    assert flash.state is FlashState.DATA
+    _spi_transfer_byte(flash, 0xA5)
+    assert flash.read_byte(prog_addr) == 0xFF
+    assert flash.wel == 0
+    flash.reset_transaction()
+
+    # With WEL: program ANDs data into memory and clears WEL.
+    flash.write_byte(prog_addr, 0xFF)
+    flash.begin_transaction()
+    _spi_transfer_byte(flash, CMD_WRITE_ENABLE)
+    flash.reset_transaction()
+    assert flash.wel == 1
+
+    flash.begin_transaction()
+    _spi_transfer_byte(flash, CMD_PAGE_PROGRAM)
+    _spi_transfer_byte(flash, (prog_addr >> 16) & 0xFF)
+    _spi_transfer_byte(flash, (prog_addr >> 8) & 0xFF)
+    _spi_transfer_byte(flash, prog_addr & 0xFF)
+    _spi_transfer_byte(flash, 0xA5)
+    assert flash.read_byte(prog_addr) == 0xA5
+    assert flash.wel == 0
+    flash.reset_transaction()
+
+    # --- process_sclk_mosi: Sector Erase (0x20) requires WEL ----------------
+    erase_addr = 0x4000
+    sector_base = erase_addr & ~(SECTOR_SIZE - 1)
+    flash.write_bytes(sector_base, bytes([0x5A] * 16))
+    flash.clear_write_enable()
+    flash.begin_transaction()
+    _spi_transfer_byte(flash, CMD_SECTOR_ERASE)
+    _spi_transfer_byte(flash, (erase_addr >> 16) & 0xFF)
+    _spi_transfer_byte(flash, (erase_addr >> 8) & 0xFF)
+    _spi_transfer_byte(flash, erase_addr & 0xFF)
+    # WEL was clear — sector must remain unchanged.
+    assert flash.read_byte(sector_base) == 0x5A
+    flash.reset_transaction()
+
+    flash.begin_transaction()
+    _spi_transfer_byte(flash, CMD_WRITE_ENABLE)
+    flash.reset_transaction()
+    assert flash.wel == 1
+
+    flash.begin_transaction()
+    _spi_transfer_byte(flash, CMD_SECTOR_ERASE)
+    _spi_transfer_byte(flash, (erase_addr >> 16) & 0xFF)
+    _spi_transfer_byte(flash, (erase_addr >> 8) & 0xFF)
+    _spi_transfer_byte(flash, erase_addr & 0xFF)
+    assert flash.read_byte(sector_base) == 0xFF
+    assert flash.read_byte(sector_base + 15) == 0xFF
+    assert flash.wel == 0
 
     for _ in range(2):
         await RisingEdge(tb.pclk)
