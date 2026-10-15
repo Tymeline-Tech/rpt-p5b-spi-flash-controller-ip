@@ -133,10 +133,11 @@ module tb_stub_smoke;
             errors = errors + 1;
         end
 
-        // STATUS after reset: RX empty set, TX not full, IRQ clear
+        // STATUS after reset: RX empty + TX empty set; not full; IRQ clear
+        // bits: [3]=RXE, [4]=TXE → 0x18
         apb_read(32'h0000_0004, rdata);
-        if (rdata !== 32'h0000_0008) begin
-            $error("STATUS: expected 0x8 (rx_empty), got %h", rdata);
+        if (rdata !== 32'h0000_0018) begin
+            $error("STATUS: expected 0x18 (rx_empty|tx_empty), got %h", rdata);
             errors = errors + 1;
         end
 

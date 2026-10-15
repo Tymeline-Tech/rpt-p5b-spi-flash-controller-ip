@@ -27,7 +27,7 @@ make synth      # Yosys → artifacts/netlist.v
 | Offset | Name   | Access | Description |
 |--------|--------|--------|-------------|
 | 0x00   | CTRL   | RW     | [0]=START (W1P), [2:1]=SPI mode |
-| 0x04   | STATUS | R/W1C  | [0]=busy, [1]=irq_pending (clear on write), [2]=tx_full, [3]=rx_empty |
+| 0x04   | STATUS | R/W1C  | [0]=busy, [1]=irq_pending (clear on write), [2]=tx_full, [3]=rx_empty, [4]=tx_empty, [5]=rx_full |
 | 0x08   | CMD    | RW     | [7:0] SPI command byte |
 | 0x0C   | ADDR   | RW     | [23:0] flash address |
 | 0x10   | DATA   | RW     | Write pushes TX FIFO; read pops RX FIFO |

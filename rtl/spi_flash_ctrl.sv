@@ -59,17 +59,11 @@ module spi_flash_ctrl (
     logic        tx_rd_ready;
     logic        tx_empty;
     logic        tx_rd_valid;
-    logic        tx_wr_ready;
 
     logic [7:0]  rx_wr_data;
     logic        rx_wr_valid;
     logic        rx_full;
     logic        rx_wr_ready;
-    logic        rx_rd_valid;
-
-    // SPI master per-byte status (engine-local; not forwarded to APB)
-    logic [7:0]  spi_rx_byte;
-    logic        spi_rx_valid;
 
     // -------------------------------------------------------------------------
     // APB register block (master control) + IRQ to top-level
@@ -93,9 +87,11 @@ module spi_flash_ctrl (
         .tx_wr_data       (tx_data),
         .tx_wr_en         (tx_write),
         .tx_full          (tx_full),
+        .tx_empty         (tx_empty),
         .rx_rd_data       (rx_data),
         .rx_rd_en         (rx_read),
         .rx_empty         (rx_empty),
+        .rx_full          (rx_full),
         .busy             (busy),
         .spi_txn_complete (spi_txn_complete),
         .irq              (irq)
@@ -112,7 +108,10 @@ module spi_flash_ctrl (
         .rst_n    (rst_n),
         .wr_valid (tx_write),
         .wr_data  (tx_data),
-        .wr_ready (tx_wr_ready),
+        // ~full; STATUS already exposes TXF/TXE — leave complement unconnected
+        /* verilator lint_off PINCONNECTEMPTY */
+        .wr_ready (),
+        /* verilator lint_on PINCONNECTEMPTY */
         .rd_ready (tx_rd_ready),
         .rd_data  (tx_rd_data),
         .rd_valid (tx_rd_valid),
@@ -134,7 +133,10 @@ module spi_flash_ctrl (
         .wr_ready (rx_wr_ready),
         .rd_ready (rx_read),
         .rd_data  (rx_data),
-        .rd_valid (rx_rd_valid),
+        // ~empty; STATUS already exposes RXE/RXF — leave complement unconnected
+        /* verilator lint_off PINCONNECTEMPTY */
+        .rd_valid (),
+        /* verilator lint_on PINCONNECTEMPTY */
         .full     (rx_full),
         .empty    (rx_empty)
     );
@@ -158,19 +160,10 @@ module spi_flash_ctrl (
         .rx_wr_ready      (rx_wr_ready),
         .busy             (busy),
         .spi_txn_complete (spi_complete),
-        .rx_data          (spi_rx_byte),
-        .rx_valid         (spi_rx_valid),
         .sclk_out         (sclk),
         .mosi_out         (mosi),
         .miso_in          (miso),
         .cs_n_out         (cs_n)
     );
-
-    // Keep intermediate FIFO status / byte-status nets reachable for lint
-    logic unused_ok;
-    always_comb begin
-        unused_ok = ^{tx_wr_ready, tx_empty, rx_full, rx_rd_valid,
-                      spi_rx_byte, spi_rx_valid};
-    end
 
 endmodule

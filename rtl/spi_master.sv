@@ -25,11 +25,9 @@ module spi_master (
     output logic        rx_wr_valid,   // rx_fifo_write_valid
     input  logic        rx_wr_ready,
 
-    // Status feedback
+    // Status feedback (per-byte RX is delivered via rx_wr_data / rx_wr_valid)
     output logic        busy,
     output logic        spi_txn_complete,
-    output logic [7:0]  rx_data,
-    output logic        rx_valid,
 
     // SPI pins
     output logic        sclk_out,
@@ -262,8 +260,6 @@ module spi_master (
     // Holds the first 7 sampled bits; the 8th arrives as miso_in on the last sample
     logic [6:0]  miso_partial;
 
-    logic [7:0]  rx_data_r;
-    logic        rx_valid_r;
     logic [7:0]  rx_wr_data_r;
     logic [7:0]  miso_byte;
 
@@ -291,8 +287,6 @@ module spi_master (
     // MOSI is MSB-first
     assign mosi_out = mosi_shift[7];
 
-    assign rx_data    = rx_data_r;
-    assign rx_valid   = rx_valid_r;
     assign rx_wr_data = rx_wr_data_r;
 
     // Half-period boundary (before optional RX FIFO stall inhibit)
@@ -361,13 +355,10 @@ module spi_master (
             tx_rd_ready   <= 1'b0;
             rx_wr_valid   <= 1'b0;
             rx_wr_data_r  <= 8'h00;
-            rx_data_r     <= 8'h00;
-            rx_valid_r    <= 1'b0;
         end else begin
             byte_done    <= 1'b0;
             tx_rd_ready  <= 1'b0;
             rx_wr_valid  <= 1'b0;
-            rx_valid_r   <= 1'b0;
 
             // Latch divider / mode / address with the transaction
             if ((state == IDLE) && start) begin
@@ -428,8 +419,6 @@ module spi_master (
                             if (state == DATA_RX) begin
                                 rx_wr_data_r <= miso_byte;
                                 rx_wr_valid  <= 1'b1;
-                                rx_data_r    <= miso_byte;
-                                rx_valid_r   <= 1'b1;
                             end
                         end else begin
                             miso_partial <= miso_byte[6:0];

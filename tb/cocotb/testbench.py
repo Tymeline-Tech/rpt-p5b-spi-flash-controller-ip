@@ -50,11 +50,13 @@ REG_CLKDIV = ADDR_CLKDIV
 CTRL_START = 0x1
 CTRL_MODE_SHIFT = 1
 
-# STATUS bits: [0]=BUSY, [1]=IRQ, [2]=TXF, [3]=RXE
+# STATUS bits: [0]=BUSY, [1]=IRQ, [2]=TXF, [3]=RXE, [4]=TXE, [5]=RXF
 STATUS_BUSY = 0x1
 STATUS_IRQ = 0x2
 STATUS_TXF = 0x4
 STATUS_RXE = 0x8
+STATUS_TXE = 0x10
+STATUS_RXF = 0x20
 
 
 def _spi_transfer_byte(flash: SpiNorFlash, byte_val: int) -> None:

@@ -28,11 +28,13 @@ module spi_reg_block (
     output logic [7:0]  tx_wr_data,
     output logic        tx_wr_en,
     input  logic        tx_full,
+    input  logic        tx_empty,
 
     // RX FIFO read side
     input  logic [7:0]  rx_rd_data,
     output logic        rx_rd_en,
     input  logic        rx_empty,
+    input  logic        rx_full,
 
     // Status from SPI engine / interrupt
     input  logic        busy,
@@ -58,6 +60,8 @@ module spi_reg_block (
     //   [1]     IRQ    — interrupt pending (cleared by write to STATUS)
     //   [2]     TXF    — TX FIFO full (RO)
     //   [3]     RXE    — RX FIFO empty (RO)
+    //   [4]     TXE    — TX FIFO empty (RO)
+    //   [5]     RXF    — RX FIFO full (RO)
 
     logic [1:0]  spi_mode_r;
     logic [7:0]  cmd_r;
@@ -184,7 +188,8 @@ module spi_reg_block (
     always_comb begin
         case (reg_addr)
             ADDR_CTRL:   prdata = {29'h0, spi_mode_r, 1'b0};
-            ADDR_STATUS: prdata = {28'h0, rx_empty, tx_full, interrupt_pending, busy};
+            ADDR_STATUS: prdata = {26'h0, rx_full, tx_empty, rx_empty, tx_full,
+                                   interrupt_pending, busy};
             ADDR_CMD:    prdata = {24'h0, cmd_r};
             ADDR_ADDR:   prdata = {8'h0, addr_r};
             ADDR_DATA:   prdata = {24'h0, rx_rd_data};
