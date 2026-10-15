@@ -1,10 +1,10 @@
-"""SPI NOR flash behavioral model — core memory, SPI sampling, and decode.
+"""SPI NOR flash behavioral model — memory, SPI decode, and MISO drive.
 
 Provides a cycle-accurate Python class representing an external SPI NOR flash
 device for independent verification of ``spi_flash_ctrl``. This module owns
 the internal memory array, the SPI transaction state machine, Write Enable
-(WEL) latch logic, and SCLK/MOSI bit assembly with command decoding. MISO
-drive is added in a later step.
+(WEL) latch logic, SCLK/MOSI bit assembly with command decoding, and MISO
+shift-out for Read (0x03), Fast Read (0x0B), and Read Status (0x05).
 """
 
 from enum import Enum, auto
@@ -44,7 +44,7 @@ class FlashState(Enum):
 
 
 class SpiNorFlash:
-    """Behavioral SPI NOR flash: memory, WEL, SPI sampling, and command decode.
+    """Behavioral SPI NOR flash: memory, WEL, SPI sampling, decode, and MISO.
 
     Parameters
     ----------
@@ -67,6 +67,10 @@ class SpiNorFlash:
         self._shift_in = 0
         # Page Program: armed for the rest of the CS frame after WEL accepted
         self._pp_armed = False
+        # MISO shift-out (MSB-first; one bit per rising SCLK in DATA)
+        self._miso = 0
+        self._miso_sr = 0
+        self._miso_bits = 0
 
     # ------------------------------------------------------------------
     # Memory helpers
@@ -140,6 +144,7 @@ class SpiNorFlash:
         self._bit_count = 0
         self._shift_in = 0
         self._pp_armed = False
+        self._clear_miso()
         # Leave _prev_sclk as-is so the next CS frame sees a correct edge.
 
     def begin_transaction(self) -> None:
@@ -152,6 +157,7 @@ class SpiNorFlash:
         self._bit_count = 0
         self._shift_in = 0
         self._pp_armed = False
+        self._clear_miso()
 
     def advance_to_address(self) -> None:
         """Transition COMMAND → ADDRESS for opcodes that take a 24-bit address."""
@@ -178,6 +184,52 @@ class SpiNorFlash:
         self.command = CMD_WRITE_ENABLE
 
     # ------------------------------------------------------------------
+    # MISO drive (Read / Fast Read / Read Status)
+    # ------------------------------------------------------------------
+
+    def get_miso(self) -> int:
+        """Return the current MISO output bit (0 or 1).
+
+        During Read (0x03), Fast Read (0x0B), and Read Status (0x05) data
+        phases, this is the bit currently being shifted out MSB-first. Outside
+        an active shift-out the line idles at 0.
+        """
+        return int(self._miso) & 1
+
+    def _clear_miso(self) -> None:
+        """Idle the MISO shift-out path (CSN boundary / new frame)."""
+        self._miso = 0
+        self._miso_sr = 0
+        self._miso_bits = 0
+
+    def _miso_command_active(self) -> bool:
+        """True when the current opcode streams bytes out on MISO."""
+        return self.command in (CMD_READ, CMD_FAST_READ, CMD_READ_STATUS)
+
+    def _queue_miso_byte(self) -> None:
+        """Load the next status or memory byte into the MISO shift register."""
+        if self.command == CMD_READ_STATUS:
+            value = self.status_register()
+        elif self.command in (CMD_READ, CMD_FAST_READ):
+            value = self.read_byte(self.address)
+            self.address = (self.address + 1) & 0xFFFFFF
+        else:
+            return
+        self._miso_sr = int(value) & 0xFF
+        self._miso_bits = 8
+
+    def _clock_miso(self) -> None:
+        """Present one MISO bit and advance the shift register (rising SCLK)."""
+        if self._miso_bits == 0:
+            self._queue_miso_byte()
+        if self._miso_bits == 0:
+            self._miso = 0
+            return
+        self._miso = (self._miso_sr >> 7) & 1
+        self._miso_sr = (self._miso_sr << 1) & 0xFF
+        self._miso_bits -= 1
+
+    # ------------------------------------------------------------------
     # SCLK / MOSI sampling and command decoding
     # ------------------------------------------------------------------
 
@@ -193,8 +245,9 @@ class SpiNorFlash:
         * ``0x02`` Page Program — programs data bytes if WEL was set, then
           clears WEL (armed for the remainder of the CS frame)
         * ``0x03`` / ``0x0B`` Read / Fast Read — address then data (Fast Read
-          consumes ``FAST_READ_DUMMY_CYCLES`` clocks before data)
-        * ``0x05`` Read Status — enters DATA for status clock-out
+          consumes ``FAST_READ_DUMMY_CYCLES`` clocks before data); MISO
+          shifts out memory bytes during DATA
+        * ``0x05`` Read Status — enters DATA and shifts the status byte on MISO
         """
         sclk = int(sclk_val) & 1
         mosi = int(mosi_val) & 1
@@ -204,13 +257,20 @@ class SpiNorFlash:
         if not rising or self.state is FlashState.IDLE:
             return
 
-        # Fast Read dummy clocks: count rising edges, do not assemble bytes.
+        # Fast Read dummy clocks: count rising edges, do not assemble bytes
+        # or drive MISO data yet.
         if (
             self.state is FlashState.DATA
             and self.dummy_cycles_remaining > 0
         ):
             self.dummy_cycles_remaining -= 1
             return
+
+        # Drive MISO before MOSI assembly so the edge that completes the
+        # command/address byte does not consume a data bit (state is still
+        # COMMAND/ADDRESS until _on_byte_received runs below).
+        if self.state is FlashState.DATA and self._miso_command_active():
+            self._clock_miso()
 
         # Shift in MSB first.
         self._shift_in = ((self._shift_in << 1) | mosi) & 0xFF
@@ -299,12 +359,9 @@ class SpiNorFlash:
             self.address = page_base | next_off
             return
 
-        if self.command in (CMD_READ, CMD_FAST_READ):
-            # MOSI is don't-care; advance the read pointer for later MISO drive.
-            self.address = (self.address + 1) & 0xFFFFFF
-            return
-
-        # CMD_READ_STATUS / post-erase DATA: ignore further MOSI bytes.
+        # CMD_READ / CMD_FAST_READ / CMD_READ_STATUS: MOSI don't-care during
+        # DATA; address and status streaming are owned by the MISO path.
+        # Post-erase DATA: ignore further MOSI bytes.
 
     def _sector_erase(self, addr: int) -> None:
         """Erase the 4 KiB sector containing ``addr`` (set bytes to 0xFF)."""

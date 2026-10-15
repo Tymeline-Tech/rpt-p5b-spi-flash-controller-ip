@@ -33,6 +33,21 @@ def _spi_transfer_byte(flash: SpiNorFlash, byte_val: int) -> None:
         flash.process_sclk_mosi(1, bit)
 
 
+def _spi_transfer_byte_miso(flash: SpiNorFlash, byte_val: int = 0) -> int:
+    """Drive eight MOSI bits and capture the MISO byte (MSB-first).
+
+    Samples ``get_miso()`` after each rising SCLK edge, matching Mode 0/3
+    master sampling of the flash model's shift-out.
+    """
+    miso_byte = 0
+    for i in range(7, -1, -1):
+        bit = (int(byte_val) >> i) & 1
+        flash.process_sclk_mosi(0, bit)
+        flash.process_sclk_mosi(1, bit)
+        miso_byte = ((miso_byte << 1) | flash.get_miso()) & 0xFF
+    return miso_byte
+
+
 def _spi_dummy_clocks(flash: SpiNorFlash, n: int, mosi: int = 0) -> None:
     """Toggle SCLK ``n`` times (rising-edge samples) without meaningful MOSI."""
     for _ in range(int(n)):
@@ -161,10 +176,12 @@ async def test_reset(dut):
 
 @cocotb.test()
 async def test_flash_model_unit(dut):
-    """Unit-test SpiNorFlash memory array, WEL latch, and SPI state machine.
+    """Unit-test SpiNorFlash memory, decode, and MISO shift-out.
 
-    Exercises the behavioral model directly (no SPI bit-banging yet). The DUT
-    is only brought out of reset so the cocotb+Icarus harness stays valid.
+    Instantiates the behavioral model directly (no RTL SPI) and drives
+    synthetic SPI frames to verify memory updates and ``get_miso()`` output.
+    The DUT is only brought out of reset so the cocotb+Icarus harness stays
+    valid.
     """
     tb = SpiFlashDUT(dut)
     _start_clock(tb.pclk)
@@ -178,6 +195,7 @@ async def test_flash_model_unit(dut):
     assert len(flash.memory) == MEMORY_SIZE == 128 * 1024
     assert flash.wel == 0
     assert flash.state is FlashState.IDLE
+    assert flash.get_miso() == 0
 
     flash.write_byte(0x0000, 0xA5)
     flash.write_byte(0x0100, 0x5A)
@@ -246,14 +264,52 @@ async def test_flash_model_unit(dut):
     assert flash.state is FlashState.COMMAND
     flash.reset_transaction()
 
-    # --- process_sclk_mosi: Read Status (0x05) → DATA -----------------------
+    # --- MISO: Read Status (0x05) shifts status register --------------------
+    flash.clear_write_enable()
     flash.begin_transaction()
     _spi_transfer_byte(flash, CMD_READ_STATUS)
     assert flash.command == CMD_READ_STATUS
     assert flash.state is FlashState.DATA
+    assert flash.status_register() == 0x00
+    assert _spi_transfer_byte_miso(flash, 0x00) == 0x00
     flash.reset_transaction()
 
-    # --- process_sclk_mosi: Read (0x03) Command → Address → Data ------------
+    flash.begin_transaction()
+    _spi_transfer_byte(flash, CMD_WRITE_ENABLE)
+    flash.reset_transaction()
+    assert flash.wel == 1
+    assert flash.status_register() & SR_WEL
+
+    flash.begin_transaction()
+    _spi_transfer_byte(flash, CMD_READ_STATUS)
+    # Continuous status stream: WEL set → 0x02 on MISO
+    assert _spi_transfer_byte_miso(flash, 0x00) == SR_WEL
+    assert _spi_transfer_byte_miso(flash, 0x00) == SR_WEL
+    flash.reset_transaction()
+    assert flash.get_miso() == 0
+
+    # --- MISO: Read (0x03) queues memory bytes onto MISO --------------------
+    read_addr = 0x001000
+    read_data = bytes([0xDE, 0xAD, 0xBE, 0xEF])
+    flash.write_bytes(read_addr, read_data)
+    flash.begin_transaction()
+    _spi_transfer_byte(flash, CMD_READ)
+    assert flash.state is FlashState.ADDRESS
+    _spi_transfer_byte(flash, (read_addr >> 16) & 0xFF)
+    _spi_transfer_byte(flash, (read_addr >> 8) & 0xFF)
+    _spi_transfer_byte(flash, read_addr & 0xFF)
+    assert flash.state is FlashState.DATA
+    assert flash.dummy_cycles_remaining == 0
+    assert flash.address == read_addr
+    got = bytes(
+        _spi_transfer_byte_miso(flash, 0x00) for _ in range(len(read_data))
+    )
+    assert got == read_data
+    # Memory unchanged by Read
+    assert bytes(flash.read_bytes(read_addr, 4)) == read_data
+    flash.reset_transaction()
+
+    # --- process_sclk_mosi: Read address framing (no MISO yet) --------------
     flash.begin_transaction()
     _spi_transfer_byte(flash, CMD_READ)
     assert flash.state is FlashState.ADDRESS
@@ -266,16 +322,23 @@ async def test_flash_model_unit(dut):
     assert flash.dummy_cycles_remaining == 0
     flash.reset_transaction()
 
-    # --- process_sclk_mosi: Fast Read (0x0B) with dummy cycles --------------
+    # --- MISO: Fast Read (0x0B) after dummy cycles --------------------------
+    fast_addr = 0x002000
+    fast_data = bytes([0x11, 0x22, 0x33, 0x44])
+    flash.write_bytes(fast_addr, fast_data)
     flash.begin_transaction()
     _spi_transfer_byte(flash, CMD_FAST_READ)
-    _spi_transfer_byte(flash, 0x00)
-    _spi_transfer_byte(flash, 0x00)
-    _spi_transfer_byte(flash, 0x10)
+    _spi_transfer_byte(flash, (fast_addr >> 16) & 0xFF)
+    _spi_transfer_byte(flash, (fast_addr >> 8) & 0xFF)
+    _spi_transfer_byte(flash, fast_addr & 0xFF)
     assert flash.state is FlashState.DATA
     assert flash.dummy_cycles_remaining == FAST_READ_DUMMY_CYCLES
     _spi_dummy_clocks(flash, FAST_READ_DUMMY_CYCLES)
     assert flash.dummy_cycles_remaining == 0
+    got_fast = bytes(
+        _spi_transfer_byte_miso(flash, 0x00) for _ in range(len(fast_data))
+    )
+    assert got_fast == fast_data
     flash.reset_transaction()
 
     # --- process_sclk_mosi: Page Program (0x02) requires WEL ----------------
