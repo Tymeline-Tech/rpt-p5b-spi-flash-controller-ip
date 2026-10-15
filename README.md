@@ -1,1 +1,34 @@
-# rpt-p5b-spi-flash-controller-ip
+# [RPT-P5b] SPI Flash Controller IP
+
+Synthesizable SystemVerilog SPI NOR flash controller with an APB3 slave host
+interface and a single-lane SPI master. Targets sky130 with an open-source
+toolchain (Verilator, Icarus/cocotb, Yosys).
+
+## Build
+
+```bash
+make lint       # Verilator --lint-only -Wall
+make simulate   # Verilator --binary --assert --trace smoke test
+make synth      # Yosys → artifacts/netlist.v
+```
+
+## RTL layout
+
+| Module            | Role                                      |
+|-------------------|-------------------------------------------|
+| `spi_flash_ctrl`  | Top-level integration                     |
+| `spi_reg_block`   | APB3 slave register block + IRQ           |
+| `spi_master`      | SPI master engine stub (CS_N high, SCLK low) |
+| `spi_tx_fifo`     | 16-entry TX FIFO                          |
+| `spi_rx_fifo`     | 16-entry RX FIFO                          |
+
+## Register map (`spi_reg_block`)
+
+| Offset | Name   | Access | Description |
+|--------|--------|--------|-------------|
+| 0x00   | CTRL   | RW     | [0]=START (W1P), [2:1]=SPI mode |
+| 0x04   | STATUS | R/W1C  | [0]=busy, [1]=irq_pending (clear on write), [2]=tx_full, [3]=rx_empty |
+| 0x08   | CMD    | RW     | [7:0] SPI command byte |
+| 0x0C   | ADDR   | RW     | [23:0] flash address |
+| 0x10   | DATA   | RW     | Write pushes TX FIFO; read pops RX FIFO |
+| 0x14   | CLKDIV | RW     | [7:0] SPI clock divider |
