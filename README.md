@@ -4,12 +4,21 @@ Synthesizable SystemVerilog SPI NOR flash controller with an APB3 slave host
 interface and a single-lane SPI master. Targets sky130 with an open-source
 toolchain (Verilator, Icarus/cocotb, Yosys).
 
+## Epic status
+
+| Epic | Status |
+|------|--------|
+| Yosys Synthesis & Resource Validation | **Synthesis Complete** / **Synthesis Passed** |
+
+Final quality-gate sign-off: [`docs/epic_status.md`](docs/epic_status.md).  
+Synthesis resource & timing report: [`docs/synthesis_report.md`](docs/synthesis_report.md).
+
 ## Build
 
 ```bash
 make lint       # Verilator --lint-only -Wall
-make simulate   # Verilator --binary --assert --trace smoke test
-make synth      # Yosys → artifacts/netlist.v
+make simulate   # Icarus + cocotb functional regression
+make synth      # Yosys sky130 → artifacts/synth.log + docs/synthesis_report.md
 ```
 
 ## RTL layout

@@ -7,7 +7,9 @@
 **Artifacts:** `artifacts/synth.log`, `artifacts/synth.ilang`  
 **Yosys:** 0.33 (git sha1 2584903a060)  
 **Date:** 2026-10-15  
-**Quality gate:** **PASS**
+**Quality gate:** **PASS**  
+**Epic status:** **Synthesis Complete** / **Synthesis Passed**  
+**Sign-off:** [`docs/epic_status.md`](epic_status.md)
 
 ---
 
@@ -92,6 +94,7 @@ closure versus `PCLK` / derived `SCLK` is a place-and-route / STA concern.
 | Yosys Tcl flow | [`synth/synth_skylake.tcl`](../synth/synth_skylake.tcl) |
 | sky130 liberty | [`synth/lib/sky130_fd_sc_hd__tt_025C_1v80.lib`](../synth/lib/sky130_fd_sc_hd__tt_025C_1v80.lib) |
 | Prior warning analysis | [`docs/synth_issue_tracker.md`](synth_issue_tracker.md) |
+| Epic sign-off | [`docs/epic_status.md`](epic_status.md) |
 
 ---
 
