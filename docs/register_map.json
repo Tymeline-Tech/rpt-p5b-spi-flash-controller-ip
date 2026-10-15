@@ -1,0 +1,134 @@
+{
+  "module": "spi_reg_block",
+  "top": "spi_flash_ctrl",
+  "bus": "APB3",
+  "data_width": 32,
+  "decode": "paddr[7:0]; paddr[31:8] must be 0; unmapped -> perror=1, read 0",
+  "source": "rtl/spi_reg_block.sv",
+  "registers": [
+    {
+      "name": "CTRL",
+      "offset": "0x00",
+      "reset": "0x00000000",
+      "fields": [
+        {
+          "name": "START",
+          "bits": "0",
+          "access": "WO-P",
+          "reset": 0,
+          "desc": "Write 1 to start a transaction; honoured only when idle; reads 0"
+        },
+        {
+          "name": "MODE",
+          "bits": "2:1",
+          "access": "RW",
+          "reset": 0,
+          "desc": "SPI mode: 0b00 Mode 0, 0b11 Mode 3; MODE[1]=CPOL, MODE[0]=CPHA; updated on every CTRL write"
+        }
+      ]
+    },
+    {
+      "name": "STATUS",
+      "offset": "0x04",
+      "reset": "0x00000008",
+      "fields": [
+        {
+          "name": "BUSY",
+          "bits": "0",
+          "access": "RO",
+          "reset": 0,
+          "desc": "SPI engine not idle"
+        },
+        {
+          "name": "IRQ",
+          "bits": "1",
+          "access": "RO/write-any-to-clear",
+          "reset": 0,
+          "desc": "Set on transaction done (set-on-event); cleared by any write to STATUS; drives irq pin"
+        },
+        {
+          "name": "TXF",
+          "bits": "2",
+          "access": "RO",
+          "reset": 0,
+          "desc": "TX FIFO full"
+        },
+        {
+          "name": "RXE",
+          "bits": "3",
+          "access": "RO",
+          "reset": 1,
+          "desc": "RX FIFO empty"
+        }
+      ]
+    },
+    {
+      "name": "CMD",
+      "offset": "0x08",
+      "reset": "0x00000000",
+      "fields": [
+        {
+          "name": "OPCODE",
+          "bits": "7:0",
+          "access": "RW",
+          "reset": 0,
+          "desc": "SPI opcode; latched at START"
+        }
+      ]
+    },
+    {
+      "name": "ADDR",
+      "offset": "0x0C",
+      "reset": "0x00000000",
+      "fields": [
+        {
+          "name": "ADDRESS",
+          "bits": "23:0",
+          "access": "RW",
+          "reset": 0,
+          "desc": "24-bit flash address, MSB first; latched at START"
+        }
+      ]
+    },
+    {
+      "name": "DATA",
+      "offset": "0x10",
+      "reset": null,
+      "fields": [
+        {
+          "name": "DATA",
+          "bits": "7:0",
+          "access": "W push TX / R pop RX",
+          "reset": null,
+          "desc": "Write pushes TX FIFO (dropped if TXF); read pops RX FIFO (no pop if RXE)"
+        }
+      ]
+    },
+    {
+      "name": "CLKDIV",
+      "offset": "0x14",
+      "reset": "0x00000000",
+      "fields": [
+        {
+          "name": "DIV",
+          "bits": "7:0",
+          "access": "RW",
+          "reset": 0,
+          "desc": "f_SCLK = f_clk / (2*(DIV+1)); latched at START"
+        }
+      ]
+    }
+  ],
+  "opcodes": {
+    "0x03": "Read",
+    "0x0B": "Fast Read (+1 dummy addr byte)",
+    "0x02": "Page Program",
+    "0x20": "Sector Erase",
+    "0x05": "Read Status (1 byte)",
+    "0x06": "Write Enable"
+  },
+  "fifos": {
+    "tx_depth": 16,
+    "rx_depth": 16
+  }
+}
