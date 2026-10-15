@@ -9,6 +9,14 @@ import cocotb
 from cocotb.clock import Clock
 from cocotb.triggers import RisingEdge, Timer
 
+from flash_model import (
+    CMD_WRITE_ENABLE,
+    MEMORY_SIZE,
+    FlashState,
+    SpiNorFlash,
+    SR_WEL,
+)
+
 
 def _start_clock(signal, period_ns=10):
     """Start a free-running clock; support cocotb ``unit=`` and legacy ``units=``."""
@@ -127,3 +135,85 @@ async def test_reset(dut):
     assert int(tb.csn.value) == 1, "SPI CS should idle high after reset"
     assert int(tb.pready.value) == 1, "APB pready should be ready after reset"
     assert int(tb.irq.value) == 0, "IRQ should be clear after reset"
+
+
+@cocotb.test()
+async def test_flash_model_unit(dut):
+    """Unit-test SpiNorFlash memory array, WEL latch, and SPI state machine.
+
+    Exercises the behavioral model directly (no SPI bit-banging yet). The DUT
+    is only brought out of reset so the cocotb+Icarus harness stays valid.
+    """
+    tb = SpiFlashDUT(dut)
+    _start_clock(tb.pclk)
+    await _timer_ns(20)
+    await tb.reset(cycles=11)
+
+    flash = SpiNorFlash()
+
+    # --- memory array -------------------------------------------------------
+    assert isinstance(flash.memory, (bytearray, bytes))
+    assert len(flash.memory) == MEMORY_SIZE == 128 * 1024
+    assert flash.wel == 0
+    assert flash.state is FlashState.IDLE
+
+    flash.write_byte(0x0000, 0xA5)
+    flash.write_byte(0x0100, 0x5A)
+    assert flash.read_byte(0x0000) == 0xA5
+    assert flash.read_byte(0x0100) == 0x5A
+
+    payload = bytes([0x11, 0x22, 0x33, 0x44])
+    flash.write_bytes(0x2000, payload)
+    assert bytes(flash.read_bytes(0x2000, 4)) == payload
+
+    # Address wrap within 128 KiB
+    flash.write_byte(MEMORY_SIZE + 7, 0x77)
+    assert flash.read_byte(7) == 0x77
+
+    # --- WEL latch ----------------------------------------------------------
+    assert flash.status_register() & SR_WEL == 0
+    assert not flash.write_enabled()
+
+    flash.set_write_enable()
+    assert flash.wel == 1
+    assert flash.write_enabled()
+    assert flash.status_register() & SR_WEL
+
+    flash.clear_write_enable()
+    assert flash.wel == 0
+    assert not flash.write_enabled()
+
+    flash.apply_write_enable_command()
+    assert flash.wel == 1
+    assert flash.command == CMD_WRITE_ENABLE
+
+    # --- SPI status state machine -------------------------------------------
+    flash.reset_transaction()
+    assert flash.state is FlashState.IDLE
+
+    flash.begin_transaction()
+    assert flash.state is FlashState.COMMAND
+
+    flash.command = 0x03
+    flash.advance_to_address()
+    assert flash.state is FlashState.ADDRESS
+
+    flash.advance_to_data(dummy_cycles=0)
+    assert flash.state is FlashState.DATA
+    assert flash.dummy_cycles_remaining == 0
+
+    flash.reset_transaction()
+    flash.begin_transaction()
+    flash.command = 0x0B
+    flash.advance_to_address()
+    flash.advance_to_data(dummy_cycles=8)
+    assert flash.state is FlashState.DATA
+    assert flash.dummy_cycles_remaining == 8
+
+    flash.reset_transaction()
+    assert flash.state is FlashState.IDLE
+    # WEL is independent of CSN / transaction reset
+    assert flash.wel == 1
+
+    for _ in range(2):
+        await RisingEdge(tb.pclk)
