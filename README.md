@@ -8,9 +8,9 @@ toolchain (Verilator, Icarus/cocotb, Yosys).
 
 | Epic | Status |
 |------|--------|
-| Yosys Synthesis & Resource Validation | **Synthesis Complete** / **Synthesis Passed** |
+| Yosys Synthesis & Resource Validation | **Ready for PM review** / **Synthesis Passed** |
 
-Final quality-gate sign-off: [`docs/epic_status.md`](docs/epic_status.md).  
+Epic status: [`docs/epic_status.md`](docs/epic_status.md).  
 Synthesis resource & timing report: [`docs/synthesis_report.md`](docs/synthesis_report.md).
 
 ## Build

@@ -43,22 +43,16 @@ def parse_yosys_version(log_text: str) -> str:
     return m.group(1).strip() if m else "unknown"
 
 
-def parse_final_hierarchy_stats(log_text: str) -> dict[str, str]:
-    """Take the last flattened '=== design hierarchy ===' block (top totals)."""
-    blocks = list(re.finditer(r"^=== design hierarchy ===\s*$", log_text, re.M))
-    if not blocks:
-        # Fallback: last "Printing statistics" section
-        blocks = list(re.finditer(r"Printing statistics", log_text))
-        if not blocks:
-            return {}
-    start = blocks[-1].start()
+def _extract_stats_chunk(log_text: str, start: int) -> str:
     chunk = log_text[start:]
-    # Stop at next major section if present
     stop = re.search(r"\n\d+\.\s+Executing |\nEnd of script|\nWarnings:", chunk[1:])
     if stop:
         chunk = chunk[: stop.start() + 1]
+    return chunk
 
-    stats: dict[str, str] = {}
+
+def _parse_stats_from_chunk(chunk: str) -> dict:
+    stats: dict = {}
     for key in (
         "Number of wires",
         "Number of wire bits",
@@ -74,17 +68,48 @@ def parse_final_hierarchy_stats(log_text: str) -> dict[str, str]:
             stats[key] = m.group(1)
 
     cells: dict[str, str] = {}
-    # Generic Yosys cells ($_*) or mapped sky130_fd_sc_hd__* standard cells
-    for m in re.finditer(r"^\s+(\$_\S+|sky130_fd_sc_hd__\S+)\s+(\d+)\s*$", chunk, re.M):
+    for m in re.finditer(r"^\s+(sky130_fd_sc_hd__\S+)\s+(\d+)\s*$", chunk, re.M):
         cells[m.group(1)] = m.group(2)
     if cells:
-        stats["_cells"] = cells  # type: ignore[assignment]
+        stats["_cells"] = cells
 
-    area_m = re.search(r"Chip area for .*:?\s*([0-9.]+)", chunk)
+    # Require the colon so greedy '.*' cannot leave only the trailing '0'
+    # of values like 18213.718400.
+    area_m = re.search(r"Chip area for[^:\n]*:\s*([0-9]+(?:\.[0-9]+)?)", chunk)
     if area_m:
         stats["Chip area"] = area_m.group(1)
-
     return stats
+
+
+def parse_final_hierarchy_stats(log_text: str) -> dict[str, str]:
+    """Prefer the last post-tech-map `stat -liberty` block (sky130 cells + area).
+
+    After dfflibmap/abc, Yosys prints `Printing statistics.` / `=== <top> ===`
+    with sky130_fd_sc_hd__* cells and a Chip area line. Earlier
+    `=== design hierarchy ===` blocks are pre-map and must not be used.
+    """
+    candidates: list[dict] = []
+
+    for m in re.finditer(r"Printing statistics", log_text):
+        chunk = _extract_stats_chunk(log_text, m.start())
+        parsed = _parse_stats_from_chunk(chunk)
+        if parsed.get("_cells") or parsed.get("Chip area"):
+            candidates.append(parsed)
+
+    # Fallback: any design-hierarchy block that already has sky130 cells
+    if not candidates:
+        for m in re.finditer(r"^=== design hierarchy ===\s*$", log_text, re.M):
+            chunk = _extract_stats_chunk(log_text, m.start())
+            parsed = _parse_stats_from_chunk(chunk)
+            if parsed.get("_cells") or parsed.get("Chip area"):
+                candidates.append(parsed)
+
+    if not candidates:
+        return {}
+
+    # Prefer the last block that reports liberty chip area; else last sky130 cell map
+    with_area = [c for c in candidates if "Chip area" in c]
+    return with_area[-1] if with_area else candidates[-1]
 
 
 def validate_ilang(ilang_text: str) -> list[str]:
@@ -96,9 +121,9 @@ def validate_ilang(ilang_text: str) -> list[str]:
         problems.append("missing autoidx line")
     if not re.search(r"^module\s+\\spi_flash_ctrl\s*$", ilang_text, re.M):
         problems.append("top module \\spi_flash_ctrl not present")
-    # Flattened sky130 map should retain mapped stdcells in the netlist
-    if "sky130_fd_sc_hd__" not in ilang_text and "$_" not in ilang_text:
-        problems.append("no sky130 / generic cells found in netlist")
+    # Flattened sky130 tech-map must leave real sky130_fd_sc_hd cells
+    if "sky130_fd_sc_hd__" not in ilang_text:
+        problems.append("no sky130_fd_sc_hd cells found in netlist (tech-map missing?)")
     # Balanced module/end is a light structural check
     n_mod = len(re.findall(r"^module\s+", ilang_text, re.M))
     n_end = len(re.findall(r"^end\s*$", ilang_text, re.M))
@@ -119,9 +144,20 @@ def render_report(
     ilang_ok: bool,
 ) -> str:
     cells = stats.get("_cells") or {}
+    if not cells:
+        raise ValueError(
+            "no sky130_fd_sc_hd__* cells in final stat -liberty block; "
+            "refusing to label generic-cell results as sky130"
+        )
+    if "Chip area" not in stats:
+        raise ValueError(
+            "missing Chip area from final stat -liberty (tt_025C_1v80); "
+            "refusing to report n/a area for a sky130-mapped netlist"
+        )
+
     cell_rows = "\n".join(
         f"| `{name}` | {count} |" for name, count in sorted(cells.items())
-    ) or "| — | 0 |"
+    )
 
     warn_status = "None" if not warnings else f"{len(warnings)} (see log)"
     err_status = "None" if not errors else f"{len(errors)} (see log)"
@@ -132,20 +168,21 @@ def render_report(
     n_cells = stats.get("Number of cells", "—")
     n_mem = stats.get("Number of memories", "—")
     n_proc = stats.get("Number of processes", "—")
-    area = stats.get("Chip area", "n/a (generic `$_*` cells; liberty areas apply after full tech-map)")
+    area = stats["Chip area"]
 
     return f"""# Synthesis Resource & Timing Report: `{TOP}` (sky130)
 
 **Project:** [RPT-P5b] SPI Flash Controller IP  
 **Top module:** `{TOP}`  
 **PDK / liberty:** sky130_fd_sc_hd TT (`$PDK_ROOT/.../sky130_fd_sc_hd__tt_025C_1v80.lib`)  
+**Corner:** `tt_025C_1v80`  
 **Flow:** `make synth` → Yosys (`synth/synth_skylake.tcl`) → dfflibmap + abc  
 **Artifacts:** `artifacts/synth.log`, `artifacts/synth.ilang`, `artifacts/spi_flash_ctrl_mapped.v`  
 **Yosys:** {version}  
 **Date:** {date.today().isoformat()}  
 **Quality gate:** **{gate}**  
-**Epic status:** **Synthesis Complete** / **Synthesis Passed**  
-**Sign-off:** [`docs/epic_status.md`](epic_status.md)
+**Epic status:** **Ready for PM review**  
+**Status doc:** [`docs/epic_status.md`](epic_status.md)
 
 ---
 
@@ -166,18 +203,19 @@ def render_report(
 
 ## 2. Resource utilization (post sky130 tech-map)
 
-Top-level design statistics from the final Yosys `stat -liberty` block:
+Top-level design statistics from the final Yosys `stat -liberty` block
+(`sky130_fd_sc_hd__tt_025C_1v80`):
 
 | Metric | Value |
 | --- | --- |
 | Wires | {wires} |
 | Wire bits | {wire_bits} |
-| Cells (sky130) | {n_cells} |
+| Cells (sky130_fd_sc_hd) | {n_cells} |
 | Memories | {n_mem} |
 | Processes | {n_proc} |
-| Reported chip area (um^2) | {area} |
+| Chip area (um^2, tt_025C_1v80) | {area} |
 
-### Cell breakdown
+### sky130 cell breakdown
 
 | Cell type | Count |
 | --- | --- |
@@ -200,7 +238,7 @@ Observed structural timing proxies from synthesis:
 
 | Proxy | Observation |
 | --- | --- |
-| Sequential elements | `sky130_fd_sc_hd__dfxtp_*` / `dfrtp_*` / related flops |
+| Sequential elements | `sky130_fd_sc_hd__dfrtp_*` / related flops |
 | Combinational fabric | sky130_fd_sc_hd combinational stdcells after ABC |
 | Latch inference | None (all processes mapped to FFs / gates) |
 | Async reset | Active-low `rst_n` retained on resettable flops where applicable |
@@ -220,7 +258,7 @@ closure versus `PCLK` / derived `SCLK` is a place-and-route / STA concern.
 | Yosys Tcl flow | [`synth/synth_skylake.tcl`](../synth/synth_skylake.tcl) |
 | sky130 liberty | `$PDK_ROOT/sky130A/libs.ref/sky130_fd_sc_hd/lib/sky130_fd_sc_hd__tt_025C_1v80.lib` (not committed) |
 | Prior warning analysis | [`docs/synth_issue_tracker.md`](synth_issue_tracker.md) |
-| Epic sign-off | [`docs/epic_status.md`](epic_status.md) |
+| Epic status | [`docs/epic_status.md`](epic_status.md) |
 
 ---
 
@@ -278,14 +316,18 @@ def main() -> int:
     print(f"ilang: OK ({len(ilang_text.splitlines())} lines, top={TOP})")
 
     stats = parse_final_hierarchy_stats(log_text)
-    report = render_report(
-        version=parse_yosys_version(log_text),
-        warnings=warnings,
-        errors=errors,
-        stats=stats,
-        ilang_lines=len(ilang_text.splitlines()),
-        ilang_ok=ilang_ok,
-    )
+    try:
+        report = render_report(
+            version=parse_yosys_version(log_text),
+            warnings=warnings,
+            errors=errors,
+            stats=stats,
+            ilang_lines=len(ilang_text.splitlines()),
+            ilang_ok=ilang_ok,
+        )
+    except ValueError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
 
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(report, encoding="utf-8")
