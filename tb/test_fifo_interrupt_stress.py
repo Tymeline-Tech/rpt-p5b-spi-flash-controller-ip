@@ -1,9 +1,8 @@
-"""FIFO integrity stress tests — TX overflow and RX underflow boundaries.
+"""FIFO integrity + interrupt / back-to-back stress tests for spi_flash_ctrl.
 
-Verifies 16-entry TX/RX FIFO defined behavior under over/under-flow stimulus:
-back-pressure via STATUS.TXF (and optional PREADY wait-states) on TX full, and
-STATUS.RXE / non-popping reads on RX empty. Interrupt stress sequences belong
-to a later story step and are not implemented here.
+Verifies 16-entry TX/RX FIFO defined behavior under over/under-flow stimulus,
+command-completion interrupt assert/clear via the STATUS register, and
+pipeline robustness under back-to-back Read re-initialization.
 """
 
 from __future__ import annotations
@@ -18,10 +17,20 @@ if str(_TB_DIR) not in sys.path:
 import cocotb
 from cocotb.triggers import RisingEdge
 
-from cmd_test_utils import export_coverage
+from cmd_test_utils import (
+    DEADBEEF_PATTERN,
+    bringup,
+    export_coverage,
+    fill_deadbeef,
+    issue_command,
+)
+from flash_model import CMD_READ
 from testbench import (
     ADDR_DATA,
     ADDR_STATUS,
+    CTRL_MODE_SHIFT,
+    STATUS_BUSY,
+    STATUS_IRQ,
     STATUS_RXE,
     STATUS_TXF,
     SpiFlashDUT,
@@ -30,6 +39,8 @@ from testbench import (
 )
 
 FIFO_DEPTH = 16
+BACK_TO_BACK_READS = 4
+READ_NBYTES = 4
 
 
 async def _bringup_no_spi(dut) -> SpiFlashDUT:
@@ -215,5 +226,129 @@ async def test_rx_fifo_underflow(dut):
     assert status2 & STATUS_RXE, f"RXE cleared after second empty read: 0x{status2:x}"
     assert int(dut.u_rx_fifo.rd_ptr.value) == rd_ptr_before
     assert (rdata2 & 0xFF) == 0x00
+
+    export_coverage()
+
+
+async def _wait_interrupt_high(tb: SpiFlashDUT, timeout_cycles: int = 20000) -> None:
+    """Wait until the command-completion interrupt pin asserts."""
+    interrupt = tb.irq
+    for _ in range(int(timeout_cycles)):
+        if int(interrupt.value) == 1:
+            return
+        await RisingEdge(tb.pclk)
+    raise TimeoutError(
+        f"interrupt pin never asserted within {timeout_cycles} cycles"
+    )
+
+
+@cocotb.test()
+async def test_interrupt_assert_and_clear(dut):
+    """IRQ asserts on Read completion and clears via STATUS interrupt-clear bit.
+
+    Sequence: issue Read (0x03) → wait for interrupt high → assert == 1 →
+    write 1 to the Interrupt Clear bit in STATUS → wait 1 cycle → assert == 0.
+    """
+    tb, flash_model = await bringup(dut)
+    fill_deadbeef(flash_model, length=64)
+    interrupt = tb.irq
+
+    assert int(interrupt.value) == 0, "interrupt must be clear before Read"
+
+    # Issue Read without using wait helpers that already check IRQ — wait on pin
+    await tb.clear_irq()
+    await tb.write_cmd(CMD_READ)
+    await tb.write_addr(0x000000)
+    for _ in range(READ_NBYTES):
+        await tb.write_tx_data(0x00)
+    await tb.write_ctrl(0 << CTRL_MODE_SHIFT)
+    await tb.start_transaction(spi_mode=0)
+
+    # Confirm the engine started, then wait for the interrupt pin itself
+    saw_busy = False
+    for _ in range(200):
+        status = await tb.read_status()
+        if status & STATUS_BUSY:
+            saw_busy = True
+            break
+        await RisingEdge(tb.pclk)
+    assert saw_busy, "STATUS.BUSY never asserted after START"
+
+    await _wait_interrupt_high(tb)
+    assert int(interrupt.value) == 1, "interrupt.value must be 1 after completion"
+
+    status = await tb.read_status()
+    assert not (status & STATUS_BUSY), f"BUSY should be clear with IRQ: 0x{status:x}"
+    assert status & STATUS_IRQ, f"STATUS.IRQ expected set: 0x{status:x}"
+
+    # Write 1 to the Interrupt Clear bit (STATUS[1] / STATUS_IRQ)
+    await tb.apb_write(ADDR_STATUS, STATUS_IRQ)
+
+    await RisingEdge(tb.pclk)
+    assert int(interrupt.value) == 0, (
+        "interrupt.value must be 0 one cycle after STATUS clear write"
+    )
+
+    status_after = await tb.read_status()
+    assert not (status_after & STATUS_IRQ), (
+        f"STATUS.IRQ should be clear after STATUS write: 0x{status_after:x}"
+    )
+
+    export_coverage()
+
+
+@cocotb.test()
+async def test_back_to_back_reads(dut):
+    """Back-to-back Read commands — rapid SPI re-init without hang or corruption.
+
+    Issues several Read (0x03) transactions immediately one after another,
+    clearing IRQ between starts, and checks each RX FIFO payload matches the
+    flash model so pipeline re-initialization stays correct under stress.
+    """
+    tb, flash_model = await bringup(dut)
+    fill_deadbeef(flash_model, length=64)
+    interrupt = tb.irq
+
+    base = DEADBEEF_PATTERN
+    for seq in range(BACK_TO_BACK_READS):
+        addr = seq  # distinct starting bytes within the repeating pattern
+        expected = bytes(flash_model.memory[addr : addr + READ_NBYTES])
+        assert expected[0] == base[addr % len(base)]
+
+        status = await issue_command(
+            tb,
+            CMD_READ,
+            spi_mode=0,
+            addr=addr,
+            tx_bytes=[0x00] * READ_NBYTES,
+        )
+        assert int(interrupt.value) == 1, (
+            f"interrupt should be high after read #{seq}: STATUS=0x{status:x}"
+        )
+        assert not (status & STATUS_RXE), (
+            f"RX FIFO empty after read #{seq}: STATUS=0x{status:x}"
+        )
+
+        got = bytearray()
+        for _ in range(READ_NBYTES):
+            got.append(await tb.read_rx_data())
+        assert bytes(got) == expected, (
+            f"back-to-back read #{seq}: got {got.hex()} != expected {expected.hex()}"
+        )
+
+        # Host clears IRQ before the next transaction re-arms the SPI engine
+        await tb.apb_write(ADDR_STATUS, STATUS_IRQ)
+        await RisingEdge(tb.pclk)
+        assert int(interrupt.value) == 0, (
+            f"interrupt must clear before read #{seq + 1}"
+        )
+
+        status_idle = await tb.read_status()
+        assert not (status_idle & STATUS_BUSY), (
+            f"BUSY stuck between back-to-back reads (#{seq}): 0x{status_idle:x}"
+        )
+        assert status_idle & STATUS_RXE, (
+            f"RXE expected after drain before next read: 0x{status_idle:x}"
+        )
 
     export_coverage()
