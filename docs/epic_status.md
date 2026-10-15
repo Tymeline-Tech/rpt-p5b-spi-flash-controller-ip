@@ -21,6 +21,7 @@
 | Resource & timing report | [`docs/synthesis_report.md`](synthesis_report.md) | `make synth` via `scripts/generate_synthesis_report.py` |
 | Issue / warning analysis | [`docs/synth_issue_tracker.md`](synth_issue_tracker.md) | Prior synthesis story |
 | Yosys Tcl flow | [`synth/synth_skylake.tcl`](../synth/synth_skylake.tcl) | Committed |
+| sky130 liberty | `$PDK_ROOT/.../sky130_fd_sc_hd__tt_025C_1v80.lib` | PDK install (not committed) |
 
 ### Sign-off criteria (met)
 
