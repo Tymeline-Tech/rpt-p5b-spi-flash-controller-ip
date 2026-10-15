@@ -3,7 +3,7 @@
 #
 # Self-check / platform gate:
 #   make lint      → artifacts/lint.log
-#   make simulate  → artifacts/sim.log  (cleans stale sim artifacts first)
+#   make simulate  → artifacts/simulation.log (+ artifacts/sim.log)
 #   make synth     → artifacts/synth.log
 # Cocotb vars: SIM=icarus TOPLEVEL=spi_flash_ctrl MODULE=testbench
 # Each target is independently runnable in its toolchain container.
@@ -21,10 +21,10 @@ RTL_FILES   := $(wildcard rtl/*.sv)
 RTL_SRCS    := $(abspath $(RTL_FILES))
 
 # Cocotb defaults (Icarus). Override on the command line, e.g. TESTCASE=test_reset.
-# Default MODULE runs Program/Erase + Read/Status command verification (Modes 0/3).
+# Default MODULE: FIFO boundary / overflow stress (TX full + RX empty).
 SIM         ?= icarus
 TOPLEVEL    ?= spi_flash_ctrl
-MODULE      ?= test_program_erase,test_read_status_commands
+MODULE      ?= test_fifo_interrupt_stress
 TESTCASE    ?=
 
 .PHONY: all lint simulate simulate-verilator synth clean clean-sim-artifacts help self-check
@@ -34,7 +34,7 @@ all: lint simulate synth
 help:
 	@echo "Targets: lint | simulate | synth | self-check | clean"
 	@echo "simulate uses cocotb+Icarus: TOPLEVEL=$(TOPLEVEL) MODULE=$(MODULE)"
-	@echo "Artifacts: artifacts/lint.log, artifacts/sim.log, artifacts/synth.log"
+	@echo "Artifacts: artifacts/lint.log, artifacts/simulation.log, artifacts/synth.log"
 
 # ---------------------------------------------------------------------------
 # lint — Verilator lint-only (hdl_sim / verilator container)
@@ -50,7 +50,7 @@ lint:
 # simulate — cocotb + Icarus Verilog (hdl_sim container)
 # Cleans stale artifacts first so the run is falsifiable end-to-end.
 # TOPLEVEL=spi_flash_ctrl, MODULE=testbench under tb/cocotb/.
-# Results: artifacts/sim.log (+ artifacts/sim/results.xml when cocotb emits it).
+# Results: artifacts/simulation.log (+ artifacts/sim/results.xml when cocotb emits it).
 # ---------------------------------------------------------------------------
 simulate: clean-sim-artifacts
 	@mkdir -p $(ARTIFACTS) $(SIM_DIR)
@@ -72,8 +72,9 @@ simulate: clean-sim-artifacts
 			COCOTB_RESULTS_FILE=$(SIM_DIR)/results.xml \
 			SIM_BUILD=$(SIM_DIR)/sim_build \
 			PYTHONPATH="$(TB_DIR):$(TB_COCOTB):$$PYTHONPATH" \
-		2>&1 | tee $(ARTIFACTS)/sim.log'
-	@test -f $(ARTIFACTS)/sim.log
+		2>&1 | tee $(ARTIFACTS)/simulation.log'
+	@cp -f $(ARTIFACTS)/simulation.log $(ARTIFACTS)/sim.log
+	@test -f $(ARTIFACTS)/simulation.log
 	@# Prefer cocotb results.xml when present; otherwise require a PASS marker in the log.
 	@if [ -f $(SIM_DIR)/results.xml ]; then \
 		grep -q 'testcase' $(SIM_DIR)/results.xml; \
@@ -81,19 +82,20 @@ simulate: clean-sim-artifacts
 		if grep -q 'errors=' $(SIM_DIR)/results.xml; then grep -q 'errors="0"' $(SIM_DIR)/results.xml; fi; \
 		! grep -E '<failure|<error' $(SIM_DIR)/results.xml; \
 	else \
-		grep -Eq 'PASS|passed|tests=.*fail=0|0\.00ns.*PASS' $(ARTIFACTS)/sim.log; \
+		grep -Eq 'PASS|passed|tests=.*fail=0|0\.00ns.*PASS' $(ARTIFACTS)/simulation.log; \
 	fi
 	@# Normalize coverage artifact to repo root when present (exactly one coverage*.xml).
 	@if [ -f $(TB_DIR)/coverage.xml ]; then mv -f $(TB_DIR)/coverage.xml $(ROOT)/coverage.xml; fi
 	@if [ -f $(TB_COCOTB)/coverage.xml ]; then mv -f $(TB_COCOTB)/coverage.xml $(ROOT)/coverage.xml; fi
 	@if [ -f $(SIM_DIR)/coverage.xml ]; then mv -f $(SIM_DIR)/coverage.xml $(ROOT)/coverage.xml; fi
 	@if [ -f $(SIM_DIR)/sim_build/coverage.xml ]; then mv -f $(SIM_DIR)/sim_build/coverage.xml $(ROOT)/coverage.xml; fi
-	@echo "simulate: PASS (artifacts/sim.log)"
+	@echo "simulate: PASS (artifacts/simulation.log)"
 
 clean-sim-artifacts:
 	# Delete stale sim logs, VCDs, ELF/build products so the next run is fresh.
 	rm -rf $(SIM_DIR)
-	rm -f $(ARTIFACTS)/sim.log $(ARTIFACTS)/results.xml $(ARTIFACTS)/coverage.xml \
+	rm -f $(ARTIFACTS)/sim.log $(ARTIFACTS)/simulation.log \
+		$(ARTIFACTS)/results.xml $(ARTIFACTS)/coverage.xml \
 		$(ROOT)/coverage.xml $(ROOT)/results.xml
 	rm -rf $(ROOT)/sim_build $(TB_DIR)/sim_build $(TB_COCOTB)/sim_build
 	rm -f $(TB_DIR)/*.vcd $(TB_DIR)/*.fst $(TB_DIR)/*.vvp \
