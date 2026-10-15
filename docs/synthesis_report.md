@@ -8,7 +8,7 @@
 **Artifacts:** `artifacts/synth.log`, `artifacts/synth.ilang`, `artifacts/spi_flash_ctrl_mapped.v`  
 **Yosys:** 0.33 (git sha1 2584903a060)  
 **Date:** 2026-10-15  
-**Quality gate:** **PASS**  
+**Quality gate:** **PASS** (Synthesis Passed when PASS)  
 **Epic status:** **Ready for PM review**  
 **Status doc:** [`docs/epic_status.md`](epic_status.md)
 

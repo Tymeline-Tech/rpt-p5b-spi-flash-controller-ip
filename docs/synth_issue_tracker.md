@@ -33,7 +33,7 @@
 | Inferred latch (`Creating latch` / positive latch infer) | 0 | — | All comb processes fully assigned |
 | Unconnected / undriven wire (textual Warning) | 0 | — | No `unconnected` / `undriven` Warning lines |
 | Unused module removal | 2 modules | Info | Default (non-param) FIFO elaborations dropped after derive |
-| Liberty area for `$_*` cells unknown | Several `stat` lines | Flow note | Generic cells not tech-mapped to sky130; not an RTL flaw |
+| Pre-map `$_*` cells | Intermediate only | Resolved | Final `stat -liberty` is sky130_fd_sc_hd only (see `docs/synthesis_report.md`) |
 
 Parser helper: `scripts/analyze_synth_log.py` (re-run after `make synth`).
 

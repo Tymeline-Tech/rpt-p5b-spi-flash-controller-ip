@@ -11,14 +11,17 @@ toolchain (Verilator, Icarus/cocotb, Yosys).
 | Yosys Synthesis & Resource Validation | **Ready for PM review** / **Synthesis Passed** |
 
 Epic status: [`docs/epic_status.md`](docs/epic_status.md).  
-Synthesis resource & timing report: [`docs/synthesis_report.md`](docs/synthesis_report.md).
+Synthesis resource & timing report: [`docs/synthesis_report.md`](docs/synthesis_report.md)
+(real sky130_fd_sc_hd cell counts and tt_025C_1v80 area from `make synth`).  
+Warning / issue analysis: [`docs/synth_issue_tracker.md`](docs/synth_issue_tracker.md).
 
 ## Build
 
 ```bash
 make lint       # Verilator --lint-only -Wall
 make simulate   # Icarus + cocotb functional regression
-make synth      # Yosys sky130 → artifacts/synth.log + docs/synthesis_report.md
+make synth      # Yosys + sky130 → artifacts/synth.log + docs/synthesis_report.md
+                # Requires PDK_ROOT (sky130_fd_sc_hd__tt_025C_1v80.lib)
 ```
 
 ## RTL layout

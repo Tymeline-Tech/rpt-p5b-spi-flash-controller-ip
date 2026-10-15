@@ -180,7 +180,7 @@ def render_report(
 **Artifacts:** `artifacts/synth.log`, `artifacts/synth.ilang`, `artifacts/spi_flash_ctrl_mapped.v`  
 **Yosys:** {version}  
 **Date:** {date.today().isoformat()}  
-**Quality gate:** **{gate}**  
+**Quality gate:** **{gate}** (Synthesis Passed when PASS)  
 **Epic status:** **Ready for PM review**  
 **Status doc:** [`docs/epic_status.md`](epic_status.md)
 
