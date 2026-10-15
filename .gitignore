@@ -1,0 +1,13 @@
+artifacts/
+*.vcd
+*.vvp
+obj_dir/
+*.o
+*.d
+__pycache__/
+*.pyc
+sim_build/
+results.xml
+coverage.xml
+*.fst
+*.lxt2
