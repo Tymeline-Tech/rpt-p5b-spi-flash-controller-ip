@@ -92,9 +92,9 @@ module spi_flash_ctrl (
         .rx_rd_data (rx_rd_data),
         .rx_rd_en   (rx_rd_en),
         .rx_empty   (rx_empty),
-        .busy       (busy),
-        .done       (done),
-        .irq        (irq)
+        .busy             (busy),
+        .spi_txn_complete (done),
+        .irq              (irq)
     );
 
     // -------------------------------------------------------------------------

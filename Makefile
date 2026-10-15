@@ -53,8 +53,11 @@ simulate: clean-sim-artifacts
 		COCOTB_RESULTS_FILE=$(SIM_DIR)/results.xml \
 		SIM_BUILD=$(SIM_DIR)/sim_build
 	@test -f $(SIM_DIR)/results.xml
-	@grep -q 'failures="0"' $(SIM_DIR)/results.xml
-	@grep -q 'errors="0"' $(SIM_DIR)/results.xml
+	@grep -q 'testcase' $(SIM_DIR)/results.xml
+	@# cocotb ≤1.x / some 2.x builds emit failures="0"; others omit the attrs when clean
+	@if grep -q 'failures=' $(SIM_DIR)/results.xml; then grep -q 'failures="0"' $(SIM_DIR)/results.xml; fi
+	@if grep -q 'errors=' $(SIM_DIR)/results.xml; then grep -q 'errors="0"' $(SIM_DIR)/results.xml; fi
+	@! grep -E '<failure|<error' $(SIM_DIR)/results.xml
 	@# Normalize coverage artifact to repo root when present.
 	@if [ -f $(TB_DIR)/coverage.xml ]; then mv -f $(TB_DIR)/coverage.xml $(ROOT)/coverage.xml; fi
 	@if [ -f $(SIM_DIR)/coverage.xml ]; then mv -f $(SIM_DIR)/coverage.xml $(ROOT)/coverage.xml; fi

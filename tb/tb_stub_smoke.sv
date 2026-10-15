@@ -1,5 +1,5 @@
-// Stub-level smoke testbench for spi_flash_ctrl
-// Checks idle SPI pins, APB immediate ready, and FIFO empty defaults.
+// Smoke testbench for spi_flash_ctrl after FIFO + APB register implementation
+// Checks idle SPI pins, APB ready, register R/W, interrupt clear, and TX FIFO.
 `timescale 1ns/1ps
 
 module tb_stub_smoke;
@@ -22,6 +22,7 @@ module tb_stub_smoke;
     logic        cs_n;
 
     integer      errors;
+    logic [31:0] rdata;
 
     spi_flash_ctrl dut (
         .clk     (clk),
@@ -53,20 +54,6 @@ module tb_stub_smoke;
         $dumpvars(0, tb_stub_smoke);
     end
 
-    // Assertions (enabled under Verilator --assert)
-    always_ff @(posedge clk) begin
-        if (rst_n) begin
-            assert (cs_n === 1'b1)
-                else $error("cs_n must remain inactive (high) in stub");
-            assert (sclk === 1'b0)
-                else $error("sclk must remain low in stub");
-            assert (pready === 1'b1)
-                else $error("pready must be tied high in stub");
-            assert (perror === 1'b0)
-                else $error("perror must be tied low in stub");
-        end
-    end
-
     task automatic apb_write(input logic [31:0] addr_i, input logic [31:0] data_i);
         begin
             @(posedge clk);
@@ -88,7 +75,7 @@ module tb_stub_smoke;
         end
     endtask
 
-    task automatic apb_read(input logic [31:0] addr_i);
+    task automatic apb_read(input logic [31:0] addr_i, output logic [31:0] data_o);
         begin
             @(posedge clk);
             psel    = 1'b1;
@@ -103,10 +90,7 @@ module tb_stub_smoke;
                 $error("APB read: pready not high");
                 errors = errors + 1;
             end
-            if (prdata !== 32'h0) begin
-                $error("APB read: stub prdata expected 0, got %h", prdata);
-                errors = errors + 1;
-            end
+            data_o = prdata;
             psel    = 1'b0;
             penable = 1'b0;
         end
@@ -121,6 +105,7 @@ module tb_stub_smoke;
         paddr   = 32'h0;
         pwdata  = 32'h0;
         miso    = 1'b0;
+        rdata   = 32'h0;
 
         repeat (4) @(posedge clk);
         rst_n = 1'b1;
@@ -143,17 +128,80 @@ module tb_stub_smoke;
             $error("Idle: irq != 0");
             errors = errors + 1;
         end
+        if (pready !== 1'b1) begin
+            $error("Idle: pready != 1");
+            errors = errors + 1;
+        end
 
-        // APB stub transactions
-        apb_write(32'h0000_0000, 32'hDEAD_BEEF);
-        apb_read (32'h0000_0004);
-        apb_write(32'h0000_0008, 32'h0000_0003); // READ cmd placeholder
-        apb_read (32'h0000_000C);
+        // STATUS after reset: RX empty set, TX not full, IRQ clear
+        apb_read(32'h0000_0004, rdata);
+        if (rdata !== 32'h0000_0008) begin
+            $error("STATUS: expected 0x8 (rx_empty), got %h", rdata);
+            errors = errors + 1;
+        end
+
+        // Program command / address / clkdiv and read back
+        apb_write(32'h0000_0008, 32'h0000_0003); // CMD = READ
+        apb_write(32'h0000_000C, 32'h00AB_CDEF); // ADDR
+        apb_write(32'h0000_0014, 32'h0000_0004); // CLKDIV
+        apb_write(32'h0000_0000, 32'h0000_0004); // CTRL: mode=2'b10 (no start)
+
+        apb_read(32'h0000_0008, rdata);
+        if (rdata !== 32'h0000_0003) begin
+            $error("CMD readback mismatch: %h", rdata);
+            errors = errors + 1;
+        end
+        apb_read(32'h0000_000C, rdata);
+        if (rdata !== 32'h00AB_CDEF) begin
+            $error("ADDR readback mismatch: %h", rdata);
+            errors = errors + 1;
+        end
+        apb_read(32'h0000_0014, rdata);
+        if (rdata !== 32'h0000_0004) begin
+            $error("CLKDIV readback mismatch: %h", rdata);
+            errors = errors + 1;
+        end
+        apb_read(32'h0000_0000, rdata);
+        if (rdata !== 32'h0000_0004) begin
+            $error("CTRL readback mismatch: %h", rdata);
+            errors = errors + 1;
+        end
+
+        // Push one byte into TX FIFO via DATA
+        apb_write(32'h0000_0010, 32'h0000_00A5);
+        apb_read(32'h0000_0004, rdata);
+        if ((rdata & 32'h0000_0004) !== 32'h0) begin
+            $error("STATUS: TX should not be full after 1 write");
+            errors = errors + 1;
+        end
+
+        // Write to STATUS clears IRQ (already clear — exercise path)
+        apb_write(32'h0000_0004, 32'hFFFF_FFFF);
+        if (irq !== 1'b0) begin
+            $error("IRQ should remain clear after STATUS write");
+            errors = errors + 1;
+        end
+
+        // Unmapped address should raise perror during access
+        @(posedge clk);
+        psel    = 1'b1;
+        pwrite  = 1'b0;
+        paddr   = 32'h0000_00FF;
+        penable = 1'b0;
+        @(posedge clk);
+        penable = 1'b1;
+        @(posedge clk);
+        if (perror !== 1'b1) begin
+            $error("Unmapped APB addr should assert perror");
+            errors = errors + 1;
+        end
+        psel    = 1'b0;
+        penable = 1'b0;
 
         repeat (4) @(posedge clk);
 
         if (errors == 0) begin
-            $display("PASS: spi_flash_ctrl stub smoke test");
+            $display("PASS: spi_flash_ctrl FIFO/APB smoke test");
             $finish;
         end else begin
             $display("FAIL: %0d error(s)", errors);

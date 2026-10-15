@@ -1,4 +1,4 @@
-"""Minimal cocotb smoke test — proves simulate entry point against placeholder RTL."""
+"""Minimal cocotb smoke test — proves simulate entry point against RTL."""
 
 import cocotb
 from cocotb.clock import Clock
@@ -19,10 +19,26 @@ except ImportError:  # pragma: no cover - optional in some environments
     HAVE_COVERAGE = False
 
 
+def _start_clock(dut, period_ns=10):
+    """Start a clock; support both cocotb ``unit=`` and legacy ``units=``."""
+    try:
+        clock = Clock(dut.clk, period_ns, unit="ns")
+    except TypeError:  # pragma: no cover - older cocotb
+        clock = Clock(dut.clk, period_ns, units="ns")
+    cocotb.start_soon(clock.start())
+
+
+async def _timer_ns(duration_ns):
+    try:
+        await Timer(duration_ns, unit="ns")
+    except TypeError:  # pragma: no cover - older cocotb
+        await Timer(duration_ns, units="ns")
+
+
 @cocotb.test()
 async def test_reset_and_idle(dut):
     """Start clock, apply reset, then check an idle SPI/APB signal."""
-    cocotb.start_soon(Clock(dut.clk, 10, unit="ns").start())
+    _start_clock(dut)
 
     dut.rst_n.value = 0
     dut.psel.value = 0
@@ -32,7 +48,7 @@ async def test_reset_and_idle(dut):
     dut.pwdata.value = 0
     dut.miso.value = 0
 
-    await Timer(50, unit="ns")
+    await _timer_ns(50)
     sample_rst(dut.rst_n)
     dut.rst_n.value = 1
     await RisingEdge(dut.clk)
@@ -42,7 +58,7 @@ async def test_reset_and_idle(dut):
         await RisingEdge(dut.clk)
 
     assert int(dut.cs_n.value) == 1, "SPI CS should idle high"
-    assert int(dut.pready.value) == 1, "APB pready should be ready in stub"
+    assert int(dut.pready.value) == 1, "APB pready should be ready"
     assert int(dut.irq.value) == 0, "IRQ should be clear at idle"
 
     if HAVE_COVERAGE:
