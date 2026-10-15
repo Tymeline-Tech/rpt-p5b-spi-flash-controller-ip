@@ -81,7 +81,10 @@ Choosing DIV:
 - A write to DATA while `STATUS.TXF = 1` is dropped silently.
 - A read from DATA while `STATUS.RXE = 1` returns stale data and pops nothing.
 - Drain the RX FIFO before starting any read command. A read started with a
-  full RX FIFO skips its data phase (see register_map.md §4.3).
+  full RX FIFO (`STATUS.RXF = 1`) skips its data phase (see register_map.md §4.3).
+- `STATUS.TXE = 1` means the TX FIFO is empty. Before Sector Erase, Write
+  Enable or Read Status, check TXE: leftover TX bytes are not consumed by those
+  commands and would become the payload or dummies of the next one.
 
 ### 1.4 C helpers used in the examples
 
@@ -106,6 +109,8 @@ Choosing DIV:
 #define STATUS_IRQ       (1u << 1)
 #define STATUS_TXF       (1u << 2)
 #define STATUS_RXE       (1u << 3)
+#define STATUS_TXE       (1u << 4)
+#define STATUS_RXF       (1u << 5)
 
 /* SPI NOR opcodes supported by the controller */
 #define OP_READ          0x03u
