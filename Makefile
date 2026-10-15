@@ -21,9 +21,10 @@ RTL_FILES   := $(wildcard rtl/*.sv)
 RTL_SRCS    := $(abspath $(RTL_FILES))
 
 # Cocotb defaults (Icarus). Override on the command line, e.g. TESTCASE=test_reset.
+# Default MODULE runs Program/Erase + Read/Status command verification (Modes 0/3).
 SIM         ?= icarus
 TOPLEVEL    ?= spi_flash_ctrl
-MODULE      ?= testbench
+MODULE      ?= test_program_erase,test_read_status_commands
 TESTCASE    ?=
 
 .PHONY: all lint simulate simulate-verilator synth clean clean-sim-artifacts help self-check
@@ -54,8 +55,10 @@ lint:
 simulate: clean-sim-artifacts
 	@mkdir -p $(ARTIFACTS) $(SIM_DIR)
 	@# PATH may need ~/.local/bin when cocotb was installed with --user (dev agents).
+	@# PYTHONPATH: tb/ (command tests) + tb/cocotb/ (DUT wrapper + flash model).
 	bash -o pipefail -c '\
 		export PATH="$$HOME/.local/bin:$$PATH"; \
+		export PYTHONPATH="$(TB_DIR):$(TB_COCOTB):$$PYTHONPATH"; \
 		$(MAKE) -C $(TB_COCOTB) \
 			SIM=$(SIM) \
 			TOPLEVEL_LANG=verilog \
@@ -68,6 +71,7 @@ simulate: clean-sim-artifacts
 			VERILOG_SOURCES="$(RTL_SRCS)" \
 			COCOTB_RESULTS_FILE=$(SIM_DIR)/results.xml \
 			SIM_BUILD=$(SIM_DIR)/sim_build \
+			PYTHONPATH="$(TB_DIR):$(TB_COCOTB):$$PYTHONPATH" \
 		2>&1 | tee $(ARTIFACTS)/sim.log'
 	@test -f $(ARTIFACTS)/sim.log
 	@# Prefer cocotb results.xml when present; otherwise require a PASS marker in the log.
@@ -79,7 +83,8 @@ simulate: clean-sim-artifacts
 	else \
 		grep -Eq 'PASS|passed|tests=.*fail=0|0\.00ns.*PASS' $(ARTIFACTS)/sim.log; \
 	fi
-	@# Normalize coverage artifact to repo root when present.
+	@# Normalize coverage artifact to repo root when present (exactly one coverage*.xml).
+	@if [ -f $(TB_DIR)/coverage.xml ]; then mv -f $(TB_DIR)/coverage.xml $(ROOT)/coverage.xml; fi
 	@if [ -f $(TB_COCOTB)/coverage.xml ]; then mv -f $(TB_COCOTB)/coverage.xml $(ROOT)/coverage.xml; fi
 	@if [ -f $(SIM_DIR)/coverage.xml ]; then mv -f $(SIM_DIR)/coverage.xml $(ROOT)/coverage.xml; fi
 	@if [ -f $(SIM_DIR)/sim_build/coverage.xml ]; then mv -f $(SIM_DIR)/sim_build/coverage.xml $(ROOT)/coverage.xml; fi
