@@ -3,8 +3,8 @@
 Provides ``SpiFlashDUT``, a thin wrapper around the cocotb DUT handle that
 maps APB slave and SPI master ports to named Python attributes, offers a
 shared ``reset()`` coroutine, and an APB3 master driver (``apb_write`` /
-``apb_read``) with register-map helpers. No behavioral flash model is
-required for the APB driver itself.
+``apb_read``) with register-map helpers. Instantiates ``SpiNorFlash`` and a
+SPI pin bridge for end-to-end host↔flash smoke tests.
 """
 
 import cocotb
@@ -305,6 +305,71 @@ class SpiFlashDUT:
         mode = int(spi_mode) & 0x3
         await self.write_ctrl(CTRL_START | (mode << CTRL_MODE_SHIFT))
 
+    async def wait_not_busy(self, timeout_cycles: int = 5000) -> int:
+        """Poll STATUS until BUSY clears; return the final STATUS value."""
+        status = await self.read_status()
+        for _ in range(int(timeout_cycles)):
+            if not (status & STATUS_BUSY):
+                return status
+            await RisingEdge(self.pclk)
+            status = await self.read_status()
+        raise TimeoutError(
+            f"STATUS.BUSY stuck set after {timeout_cycles} polls "
+            f"(last STATUS=0x{status:x})"
+        )
+
+
+async def spi_flash_bridge(tb: SpiFlashDUT, flash_model: SpiNorFlash):
+    """Bridge DUT SPI pins to ``SpiNorFlash`` (monitor SCLK/MOSI/CSN, drive MISO).
+
+    Samples the DUT each PCLK rising edge (after RTL NBA updates), feeds
+    ``process_sclk_mosi``, and drives ``miso`` from ``get_miso()``. On CSN
+    assert/deassert the model begins/resets a transaction.
+
+    When the model enters DATA for a MISO-producing command, the first status
+    / memory bit is primed immediately so it is valid before the DUT's next
+    rising-SCLK sample (Mode 0/3 master samples on the rising edge; the
+    behavioral model advances MISO on that same edge, one half-cycle late if
+    only driven from Python after the NBA region).
+    """
+    prev_csn = 1
+    while True:
+        await RisingEdge(tb.pclk)
+
+        try:
+            csn = int(tb.csn.value)
+            sclk = int(tb.sclk.value)
+            mosi = int(tb.mosi.value)
+        except ValueError:
+            # X/Z during early reset — hold MISO idle
+            tb.miso.value = 0
+            continue
+
+        if prev_csn == 1 and csn == 0:
+            flash_model.begin_transaction()
+        elif prev_csn == 0 and csn == 1:
+            flash_model.reset_transaction()
+
+        if csn == 0:
+            prev_state = flash_model.state
+            flash_model.process_sclk_mosi(sclk, mosi)
+
+            # Prime first MISO bit as soon as DATA is entered (no dummy left).
+            if (
+                prev_state is not FlashState.DATA
+                and flash_model.state is FlashState.DATA
+                and flash_model.command
+                in (CMD_READ, CMD_FAST_READ, CMD_READ_STATUS)
+                and flash_model.dummy_cycles_remaining == 0
+            ):
+                flash_model._clock_miso()
+
+            tb.miso.value = flash_model.get_miso()
+        else:
+            tb.miso.value = 0
+
+        prev_csn = csn
+
 
 @cocotb.test()
 async def test_reset(dut):
@@ -596,3 +661,63 @@ async def test_flash_model_unit(dut):
 
     for _ in range(2):
         await RisingEdge(tb.pclk)
+
+
+@cocotb.test()
+async def test_smoke_read_status(dut):
+    """End-to-end smoke: APB Read Status (0x05) ↔ SpiNorFlash ↔ RX FIFO.
+
+    Sequence: Reset → CTRL Mode 0 → CMD 0x05 → START → wait completion →
+    read RX_DATA and compare against the flash model's status register.
+    """
+    tb = SpiFlashDUT(dut)
+    flash_model = SpiNorFlash()
+    _start_clock(tb.pclk)
+    cocotb.start_soon(spi_flash_bridge(tb, flash_model))
+
+    await _timer_ns(20)
+    await tb.reset(cycles=11)
+
+    # Known status: WEL/WIP cleared after model construction / reset path
+    expected_sr = flash_model.status_register()
+    assert expected_sr == 0x00, f"flash status should be 0 after reset, got 0x{expected_sr:x}"
+
+    # Configure SPI Mode 0 (no START yet)
+    await tb.write_ctrl(0 << CTRL_MODE_SHIFT)
+    # Optional divider: 1 keeps SCLK slow enough for clean edge sampling
+    await tb.write_cfg(0x01)
+
+    # Issue Read Status (0x05) then pulse START with Mode 0
+    await tb.write_cmd(CMD_READ_STATUS)
+    await tb.start_transaction(spi_mode=0)
+
+    # Wait for BUSY to assert (START is registered one cycle after the APB write)
+    saw_busy = False
+    for _ in range(100):
+        status = await tb.read_status()
+        if status & STATUS_BUSY:
+            saw_busy = True
+            break
+        await RisingEdge(tb.pclk)
+    assert saw_busy, "STATUS.BUSY never asserted after START"
+
+    # Wait until the engine drops BUSY (txn complete; IRQ should also assert)
+    status = await tb.wait_not_busy(timeout_cycles=10000)
+    assert not (status & STATUS_BUSY), f"BUSY still set: 0x{status:x}"
+    assert status & STATUS_IRQ, f"IRQ pending expected after completion: 0x{status:x}"
+    assert not (status & STATUS_RXE), (
+        f"RX FIFO should hold status byte (RXE clear), STATUS=0x{status:x}"
+    )
+    assert int(tb.irq.value) == 1, "irq pin should follow STATUS.IRQ"
+
+    # Pop RX FIFO and compare with the behavioral flash status register
+    rx_byte = await tb.read_rx_data()
+    assert rx_byte == expected_sr, (
+        f"RX FIFO 0x{rx_byte:02x} != flash status 0x{expected_sr:02x}"
+    )
+
+    # STATUS should show RX empty again after the pop
+    status_after = await tb.read_status()
+    assert status_after & STATUS_RXE, (
+        f"RXE expected after draining RX FIFO, got 0x{status_after:x}"
+    )
