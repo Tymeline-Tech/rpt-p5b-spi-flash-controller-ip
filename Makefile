@@ -16,6 +16,9 @@ SYNTH_DIR   := $(ROOT)/synth
 ARTIFACTS   := $(ROOT)/artifacts
 SIM_DIR     := $(ARTIFACTS)/sim
 
+# Yosys Tcl flow for sky130 technology mapping (step-1 synth script)
+YOSYS_SCRIPT := synth/synth_skylake.tcl
+
 TOP         := spi_flash_ctrl
 RTL_FILES   := $(wildcard rtl/*.sv)
 RTL_SRCS    := $(abspath $(RTL_FILES))
@@ -123,12 +126,12 @@ clean-sim-artifacts:
 
 # ---------------------------------------------------------------------------
 # synth — Yosys synthesis of the RTL hierarchy (hdl_synth / yosys container)
-# sky130 flow: synth/synth_skylake.tcl (top: spi_flash_ctrl, read_lib + prep/synth/opt)
+# sky130 flow: $(YOSYS_SCRIPT) (top: spi_flash_ctrl, read_lib + prep/synth/opt)
 # log → artifacts/synth.log, netlist → artifacts/synth.ilang
 # ---------------------------------------------------------------------------
 synth:
 	@mkdir -p artifacts
-	bash -o pipefail -c 'yosys -l artifacts/synth.log synth/synth_skylake.tcl'
+	bash -o pipefail -c 'yosys -l artifacts/synth.log -c $(YOSYS_SCRIPT)'
 	@test -f artifacts/synth.log
 	@test -f artifacts/synth.ilang
 	@echo "synth: PASS (artifacts/synth.log + artifacts/synth.ilang)"
