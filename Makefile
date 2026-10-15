@@ -4,7 +4,7 @@
 # Self-check / platform gate:
 #   make lint      → artifacts/lint.log
 #   make simulate  → artifacts/simulation.log (+ functional_coverage_report.md)
-#   make synth     → artifacts/synth.log
+#   make synth     → artifacts/synth.log + artifacts/synth.ilang
 # Cocotb vars: SIM=icarus TOPLEVEL=spi_flash_ctrl MODULE=<comma-separated tests>
 # Each target is independently runnable in its toolchain container.
 
@@ -38,7 +38,8 @@ help:
 	@echo "Targets: lint | simulate | synth | coverage-report | self-check | clean"
 	@echo "simulate uses cocotb+Icarus: TOPLEVEL=$(TOPLEVEL) MODULE=$(MODULE)"
 	@echo "Artifacts: artifacts/lint.log, artifacts/simulation.log,"
-	@echo "           artifacts/functional_coverage_report.md, artifacts/synth.log"
+	@echo "           artifacts/functional_coverage_report.md,"
+	@echo "           artifacts/synth.log, artifacts/synth.ilang"
 
 # ---------------------------------------------------------------------------
 # lint — Verilator lint-only (hdl_sim / verilator container)
@@ -122,15 +123,15 @@ clean-sim-artifacts:
 
 # ---------------------------------------------------------------------------
 # synth — Yosys synthesis of the RTL hierarchy (hdl_synth / yosys container)
-# Reads every rtl/*.sv (top: spi_flash_ctrl) via synth/top_synth.tcl;
-# log → artifacts/synth.log, netlist → artifacts/synth_out.v
+# sky130 flow: synth/synth_skylake.tcl (top: spi_flash_ctrl, read_lib + prep/synth/opt)
+# log → artifacts/synth.log, netlist → artifacts/synth.ilang
 # ---------------------------------------------------------------------------
 synth:
 	@mkdir -p artifacts
-	bash -o pipefail -c 'yosys synth/top_synth.tcl 2>&1 | tee artifacts/synth.log'
+	bash -o pipefail -c 'yosys -l artifacts/synth.log synth/synth_skylake.tcl'
 	@test -f artifacts/synth.log
-	@test -f artifacts/synth_out.v
-	@echo "synth: PASS (artifacts/synth.log)"
+	@test -f artifacts/synth.ilang
+	@echo "synth: PASS (artifacts/synth.log + artifacts/synth.ilang)"
 
 # Local end-to-end regression (not used by the platform gate; each gate
 # command still runs independently in its own toolchain container).
@@ -149,7 +150,7 @@ simulate-verilator:
 
 clean: clean-sim-artifacts
 	rm -rf $(ARTIFACTS)/$(TOP)_netlist.v $(ARTIFACTS)/$(TOP)_synth.json \
-		$(ARTIFACTS)/synth_out.v \
+		$(ARTIFACTS)/synth_out.v $(ARTIFACTS)/synth.ilang \
 		$(ARTIFACTS)/lint.log $(ARTIFACTS)/synth.log
 	@# Keep artifacts/.gitkeep
 	@touch $(ARTIFACTS)/.gitkeep
