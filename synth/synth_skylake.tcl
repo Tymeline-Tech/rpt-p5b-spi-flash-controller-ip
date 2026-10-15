@@ -12,6 +12,10 @@ proc read_lib {args} {
 
 file mkdir artifacts
 
+# FIFO DEPTH=16 mem[] → register-list elaborations are expected (SYN-001).
+# Demote them so the clean-slate quality gate can assert No warnings / No errors.
+logger -nowarn "Replacing memory"
+
 # ---------------------------------------------------------------------------
 # Technology library (sky130 standard cells) for mapping / area estimation
 # ---------------------------------------------------------------------------
@@ -31,6 +35,7 @@ foreach f [lsort [glob rtl/*.sv]] {
 prep -top spi_flash_ctrl
 synth -top spi_flash_ctrl
 opt
+check -assert
 
 # Resource / area summary (liberty areas apply once cells are mapped)
 stat -liberty $sky130_lib

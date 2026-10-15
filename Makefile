@@ -5,6 +5,7 @@
 #   make lint      → artifacts/lint.log
 #   make simulate  → artifacts/simulation.log (+ functional_coverage_report.md)
 #   make synth     → artifacts/synth.log + artifacts/synth.ilang
+#                    + docs/synthesis_report.md
 # Cocotb vars: SIM=icarus TOPLEVEL=spi_flash_ctrl MODULE=<comma-separated tests>
 # Each target is independently runnable in its toolchain container.
 
@@ -15,6 +16,7 @@ TB_COCOTB   := $(TB_DIR)/cocotb
 SYNTH_DIR   := $(ROOT)/synth
 ARTIFACTS   := $(ROOT)/artifacts
 SIM_DIR     := $(ARTIFACTS)/sim
+DOCS_DIR    := $(ROOT)/docs
 
 # Yosys Tcl flow for sky130 technology mapping (step-1 synth script)
 YOSYS_SCRIPT := synth/synth_skylake.tcl
@@ -31,6 +33,8 @@ MODULE      ?= test_read_status_commands,test_program_erase,test_fifo_interrupt_
 TESTCASE    ?=
 COVERAGE_REPORT := $(ARTIFACTS)/functional_coverage_report.md
 COVERAGE_SCRIPT := $(ROOT)/scripts/generate_coverage_report.py
+SYNTH_REPORT := $(DOCS_DIR)/synthesis_report.md
+SYNTH_REPORT_SCRIPT := $(ROOT)/scripts/generate_synthesis_report.py
 
 .PHONY: all lint simulate simulate-verilator synth clean clean-sim-artifacts \
 	coverage-report help self-check
@@ -42,7 +46,8 @@ help:
 	@echo "simulate uses cocotb+Icarus: TOPLEVEL=$(TOPLEVEL) MODULE=$(MODULE)"
 	@echo "Artifacts: artifacts/lint.log, artifacts/simulation.log,"
 	@echo "           artifacts/functional_coverage_report.md,"
-	@echo "           artifacts/synth.log, artifacts/synth.ilang"
+	@echo "           artifacts/synth.log, artifacts/synth.ilang,"
+	@echo "           docs/synthesis_report.md"
 
 # ---------------------------------------------------------------------------
 # lint — Verilator lint-only (hdl_sim / verilator container)
@@ -128,13 +133,22 @@ clean-sim-artifacts:
 # synth — Yosys synthesis of the RTL hierarchy (hdl_synth / yosys container)
 # sky130 flow: $(YOSYS_SCRIPT) (top: spi_flash_ctrl, read_lib + prep/synth/opt)
 # log → artifacts/synth.log, netlist → artifacts/synth.ilang
+# report → docs/synthesis_report.md (resource / quality-gate summary)
+# Clean-slate: callers may `rm -rf artifacts/` first; this target always
+# regenerates log, netlist, and report from the current RTL.
 # ---------------------------------------------------------------------------
 synth:
-	@mkdir -p artifacts
+	@mkdir -p artifacts docs
+	@touch artifacts/.gitkeep
 	bash -o pipefail -c 'yosys -l artifacts/synth.log -c $(YOSYS_SCRIPT)'
 	@test -f artifacts/synth.log
 	@test -f artifacts/synth.ilang
-	@echo "synth: PASS (artifacts/synth.log + artifacts/synth.ilang)"
+	python3 $(SYNTH_REPORT_SCRIPT) \
+		--log artifacts/synth.log \
+		--ilang artifacts/synth.ilang \
+		--out $(SYNTH_REPORT)
+	@test -f $(SYNTH_REPORT)
+	@echo "synth: PASS (artifacts/synth.log + artifacts/synth.ilang + docs/synthesis_report.md)"
 
 # Local end-to-end regression (not used by the platform gate; each gate
 # command still runs independently in its own toolchain container).
