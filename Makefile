@@ -1,107 +1,105 @@
-# SPI Flash Controller IP — top-level build
-# Toolchain split (verification containers):
-#   make lint     / make simulate  → verilator container (verilator, iverilog, cocotb)
-#   make synth                    → yosys container
+# SPI Flash Controller IP — top-level toolchain entry points
+# Tools: Verilator (lint), Icarus + cocotb (simulate), Yosys (synth)
+#
+# Self-check contract (Repository Foundation gate):
+#   make lint      → artifacts/lint.log
+#   make simulate  → artifacts/sim/results.xml  (cleans stale sim artifacts first)
+#   make synth     → artifacts/synth.log
+# Each target is independently runnable in its toolchain container.
 
-RTL_DIR      := rtl
-TB_DIR       := tb
-ART_DIR      := artifacts
+ROOT        := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
+RTL_DIR     := $(ROOT)/rtl
+TB_DIR      := $(ROOT)/tb
+SYNTH_DIR   := $(ROOT)/synth
+ARTIFACTS   := $(ROOT)/artifacts
+SIM_DIR     := $(ARTIFACTS)/sim
 
-TOP          := spi_flash_ctrl
-TB           := tb_spi_flash_ctrl
+TOP         := spi_flash_ctrl
+RTL_FILES   := $(wildcard rtl/*.sv)
+RTL_SRCS    := $(abspath $(RTL_FILES))
 
-RTL_SRCS     := \
-	$(RTL_DIR)/spi_master.sv \
-	$(RTL_DIR)/spi_reg_block.sv \
-	$(RTL_DIR)/spi_tx_fifo.sv \
-	$(RTL_DIR)/spi_rx_fifo.sv \
-	$(RTL_DIR)/spi_flash_ctrl.sv
-
-TB_SRCS      := $(TB_DIR)/tb_spi_flash_ctrl.sv
-
-LINT_LOG     := $(ART_DIR)/lint.log
-SIM_LOG      := $(ART_DIR)/simulate.log
-SYNTH_LOG    := $(ART_DIR)/synth.log
-NETLIST      := $(ART_DIR)/netlist.v
-SIM_BIN_DIR  := $(ART_DIR)/sim_obj
-SIM_BIN      := $(SIM_BIN_DIR)/V$(TB)
-
-VERILATOR    ?= verilator
-YOSYS        ?= yosys
-
-.PHONY: all lint simulate synth clean dirs
+.PHONY: all lint simulate simulate-verilator synth clean clean-sim-artifacts help self-check
 
 all: lint simulate synth
 
-dirs:
-	@mkdir -p $(ART_DIR) $(SIM_BIN_DIR)
+help:
+	@echo "Targets: lint | simulate | synth | self-check | clean"
+	@echo "Self-check artifacts: artifacts/lint.log, artifacts/sim/results.xml, artifacts/synth.log"
 
 # ---------------------------------------------------------------------------
-# Lint (Verilator) — must run in the verilator/sim container
+# lint — Verilator lint-only (hdl_sim / verilator container)
+# Lints every SystemVerilog source under rtl/; log → artifacts/lint.log
 # ---------------------------------------------------------------------------
-lint: dirs
-	@echo "lint: $(VERILATOR) --lint-only -Wall -sv $(RTL_SRCS)"
-	@$(VERILATOR) --lint-only -Wall -sv --top-module $(TOP) $(RTL_SRCS) \
-		> $(LINT_LOG) 2>&1; \
-	ec=$$?; \
-	if [ $$ec -ne 0 ]; then \
-		echo "error: verilator lint failed (exit $$ec); see $(LINT_LOG)"; \
-		cat $(LINT_LOG); \
-		exit $$ec; \
-	fi
-	@echo "lint: OK" | tee -a $(LINT_LOG)
+lint:
+	@mkdir -p artifacts
+	bash -o pipefail -c 'verilator --lint-only -Wall -sv --top-module $(TOP) $(RTL_FILES) 2>&1 | tee artifacts/lint.log'
+	@test -f artifacts/lint.log
+	@echo "lint: PASS (artifacts/lint.log)"
 
 # ---------------------------------------------------------------------------
-# Simulate (Verilator --binary + --assert + VCD)
+# simulate — cocotb + Icarus Verilog smoke (hdl_sim container)
+# Cleans stale artifacts first so the run is falsifiable end-to-end.
+# Results: artifacts/sim/results.xml (fail the build if Python tests fail).
 # ---------------------------------------------------------------------------
-simulate: dirs
-	@echo "simulate: building $(TB) with Verilator --binary --assert"
-	@$(VERILATOR) --binary --assert --trace -Wall -sv --timing \
-		--top-module $(TB) \
-		-Mdir $(SIM_BIN_DIR) \
-		-o V$(TB) \
-		$(RTL_SRCS) $(TB_SRCS) \
-		> $(SIM_LOG) 2>&1; \
-	ec=$$?; \
-	if [ $$ec -ne 0 ]; then \
-		echo "error: verilator build failed (exit $$ec); see $(SIM_LOG)"; \
-		cat $(SIM_LOG); \
-		exit $$ec; \
-	fi
-	@echo "simulate: running $(SIM_BIN)"
-	@$(SIM_BIN) >> $(SIM_LOG) 2>&1; \
-	ec=$$?; \
-	if [ $$ec -ne 0 ]; then \
-		echo "error: simulation failed (exit $$ec); see $(SIM_LOG)"; \
-		cat $(SIM_LOG); \
-		exit $$ec; \
-	fi
-	@grep -q "PASS" $(SIM_LOG) || (echo "error: PASS not found in $(SIM_LOG)"; cat $(SIM_LOG); exit 1)
-	@echo "simulate: OK"
+simulate: clean-sim-artifacts
+	@mkdir -p $(SIM_DIR)
+	$(MAKE) -C $(TB_DIR) \
+		SIM=icarus \
+		TOPLEVEL_LANG=verilog \
+		TOPLEVEL=tb_spi_flash_ctrl \
+		COCOTB_TEST_MODULES=test_smoke \
+		MODULE=test_smoke \
+		VERILOG_SOURCES="$(RTL_SRCS) $(TB_DIR)/tb_spi_flash_ctrl.sv" \
+		COCOTB_RESULTS_FILE=$(SIM_DIR)/results.xml \
+		SIM_BUILD=$(SIM_DIR)/sim_build
+	@test -f $(SIM_DIR)/results.xml
+	@grep -q 'failures="0"' $(SIM_DIR)/results.xml
+	@grep -q 'errors="0"' $(SIM_DIR)/results.xml
+	@# Normalize coverage artifact to repo root when present.
+	@if [ -f $(TB_DIR)/coverage.xml ]; then mv -f $(TB_DIR)/coverage.xml $(ROOT)/coverage.xml; fi
+	@if [ -f $(SIM_DIR)/coverage.xml ]; then mv -f $(SIM_DIR)/coverage.xml $(ROOT)/coverage.xml; fi
+	@if [ -f $(SIM_DIR)/sim_build/coverage.xml ]; then mv -f $(SIM_DIR)/sim_build/coverage.xml $(ROOT)/coverage.xml; fi
+	@echo "simulate: PASS (artifacts/sim/results.xml)"
+
+clean-sim-artifacts:
+	# Delete stale sim logs, VCDs, ELF/build products so the next run is fresh.
+	rm -rf $(SIM_DIR)
+	rm -f $(ARTIFACTS)/results.xml $(ARTIFACTS)/coverage.xml \
+		$(ROOT)/coverage.xml $(ROOT)/results.xml
+	rm -rf $(ROOT)/sim_build $(TB_DIR)/sim_build
+	rm -f $(TB_DIR)/*.vcd $(TB_DIR)/*.fst $(TB_DIR)/*.vvp \
+		$(ARTIFACTS)/*.vcd $(ARTIFACTS)/*.fst
 
 # ---------------------------------------------------------------------------
-# Synth (Yosys) — must run in the yosys container
+# synth — Yosys synthesis of the RTL hierarchy (hdl_synth / yosys container)
+# Reads every rtl/*.sv (top: spi_flash_ctrl) via synth/top_synth.tcl;
+# log → artifacts/synth.log, netlist → artifacts/synth_out.v
 # ---------------------------------------------------------------------------
-synth: dirs
-	@echo "synth: yosys → $(NETLIST)"
-	@$(YOSYS) -p "\
-		read_verilog -sv $(RTL_SRCS); \
-		hierarchy -check -top $(TOP); \
-		proc; opt; fsm; opt; memory; opt; \
-		techmap; opt; \
-		write_verilog -noattr $(NETLIST); \
-		stat" \
-		> $(SYNTH_LOG) 2>&1; \
-	ec=$$?; \
-	if [ $$ec -ne 0 ]; then \
-		echo "error: yosys synth failed (exit $$ec); see $(SYNTH_LOG)"; \
-		cat $(SYNTH_LOG); \
-		exit $$ec; \
-	fi
-	@test -f $(NETLIST) || (echo "error: missing $(NETLIST)"; exit 1)
-	@grep -qiE '^ERROR:' $(SYNTH_LOG) && \
-		(echo "error: critical yosys ERROR in $(SYNTH_LOG)"; exit 1) || true
-	@echo "synth: OK" | tee -a $(SYNTH_LOG)
+synth:
+	@mkdir -p artifacts
+	bash -o pipefail -c 'yosys synth/top_synth.tcl 2>&1 | tee artifacts/synth.log'
+	@test -f artifacts/synth.log
+	@test -f artifacts/synth_out.v
+	@echo "synth: PASS (artifacts/synth.log)"
 
-clean:
-	rm -rf $(ART_DIR) $(SIM_BIN_DIR)
+# Local end-to-end regression (not used by the platform gate; each gate
+# command still runs independently in its own toolchain container).
+self-check: lint simulate synth
+	@test -f artifacts/lint.log
+	@test -f artifacts/sim/results.xml
+	@test -f artifacts/synth.log
+	@echo "self-check: PASS (lint + simulate + synth)"
+
+# Verilator self-checking stub smoke (assertions on; not part of the gate).
+simulate-verilator:
+	@mkdir -p $(ARTIFACTS)/vl_obj
+	verilator --binary --assert --trace -Wall -sv --timing --top-module tb_stub_smoke \
+		-Mdir $(ARTIFACTS)/vl_obj -o Vtb_stub_smoke $(RTL_FILES) $(TB_DIR)/tb_stub_smoke.sv
+	$(ARTIFACTS)/vl_obj/Vtb_stub_smoke
+
+clean: clean-sim-artifacts
+	rm -rf $(ARTIFACTS)/$(TOP)_netlist.v $(ARTIFACTS)/$(TOP)_synth.json \
+		$(ARTIFACTS)/synth_out.v \
+		$(ARTIFACTS)/lint.log $(ARTIFACTS)/synth.log
+	@# Keep artifacts/.gitkeep
+	@touch $(ARTIFACTS)/.gitkeep

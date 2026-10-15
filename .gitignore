@@ -1,13 +1,48 @@
-artifacts/
-*.vcd
-*.vvp
-obj_dir/
+# Build and simulation outputs
+artifacts/*
+!artifacts/.gitkeep
+out/*
 *.o
-*.d
+*.vcd
+*.fst
+*.lxt
+*.lxt2
+*.vvp
+*.exe
+obj_dir/
+*.log
+coverage.xml
+coverage*.xml
+
+# Python / cocotb
 __pycache__/
-*.pyc
+*.py[cod]
+*$py.class
+.pytest_cache/
+*.egg-info/
+.venv/
+venv/
 sim_build/
 results.xml
-coverage.xml
-*.fst
-*.lxt2
+
+# Yosys / synthesis intermediates
+*.json
+!synth/*.json
+*.blif
+*.edif
+*.dot
+
+# Editor and IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+*.sublime-project
+*.sublime-workspace
+
+# Local preferences
+*.local
+.env
+.env.*
