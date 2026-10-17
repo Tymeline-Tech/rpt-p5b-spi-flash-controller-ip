@@ -1,4 +1,6 @@
-module spi_flash_ctrl (clk,
+module spi_flash_ctrl (VDD,
+    VSS,
+    clk,
     cs_n,
     irq,
     miso,
@@ -10,11 +12,11 @@ module spi_flash_ctrl (clk,
     pwrite,
     rst_n,
     sclk,
-    VDD,
-    VSS,
     paddr,
     prdata,
     pwdata);
+ inout VDD;
+ inout VSS;
  input clk;
  output cs_n;
  output irq;
@@ -27,8 +29,6 @@ module spi_flash_ctrl (clk,
  input pwrite;
  input rst_n;
  output sclk;
- inout VDD;
- inout VSS;
  input [31:0] paddr;
  output [31:0] prdata;
  input [31:0] pwdata;
@@ -526,20 +526,12 @@ module spi_flash_ctrl (clk,
  wire _0490_;
  wire _0491_;
  wire _0492_;
- wire net153;
- wire net152;
- wire net151;
- wire net150;
  wire _0497_;
- wire clknet_leaf_9_clk;
  wire _0499_;
- wire clknet_leaf_8_clk;
  wire _0501_;
  wire _0502_;
  wire _0503_;
  wire _0504_;
- wire clknet_leaf_3_clk;
- wire clknet_leaf_2_clk;
  wire _0507_;
  wire _0508_;
  wire _0509_;
@@ -551,7 +543,6 @@ module spi_flash_ctrl (clk,
  wire _0515_;
  wire _0516_;
  wire _0517_;
- wire clknet_leaf_1_clk;
  wire _0519_;
  wire _0520_;
  wire _0521_;
@@ -562,10 +553,7 @@ module spi_flash_ctrl (clk,
  wire _0526_;
  wire _0527_;
  wire _0528_;
- wire clknet_leaf_0_clk;
- wire clknet_leaf_7_clk;
  wire _0531_;
- wire clknet_leaf_5_clk;
  wire _0533_;
  wire _0534_;
  wire _0535_;
@@ -576,7 +564,6 @@ module spi_flash_ctrl (clk,
  wire _0540_;
  wire _0541_;
  wire _0542_;
- wire clknet_leaf_4_clk;
  wire _0544_;
  wire _0545_;
  wire _0546_;
@@ -592,42 +579,27 @@ module spi_flash_ctrl (clk,
  wire _0556_;
  wire _0557_;
  wire _0558_;
- wire clknet_leaf_6_clk;
  wire _0560_;
  wire _0561_;
  wire _0562_;
  wire _0563_;
  wire _0564_;
  wire _0565_;
- wire net148;
  wire _0567_;
  wire _0568_;
- wire net147;
  wire _0570_;
- wire net145;
- wire net144;
  wire _0573_;
- wire net140;
- wire net139;
  wire _0576_;
- wire net138;
  wire _0578_;
- wire net137;
- wire net133;
- wire net149;
  wire _0582_;
- wire net132;
  wire _0584_;
  wire _0585_;
  wire _0586_;
  wire _0587_;
- wire net131;
- wire net130;
  wire _0590_;
  wire _0591_;
  wire _0592_;
  wire _0593_;
- wire net146;
  wire _0595_;
  wire _0596_;
  wire _0597_;
@@ -635,14 +607,12 @@ module spi_flash_ctrl (clk,
  wire _0599_;
  wire _0600_;
  wire _0601_;
- wire net134;
  wire _0603_;
  wire _0604_;
  wire _0605_;
  wire _0606_;
  wire _0607_;
  wire _0608_;
- wire net143;
  wire _0610_;
  wire _0611_;
  wire _0612_;
@@ -650,15 +620,11 @@ module spi_flash_ctrl (clk,
  wire _0614_;
  wire _0615_;
  wire _0616_;
- wire net141;
  wire _0618_;
  wire _0619_;
  wire _0620_;
  wire _0621_;
- wire net136;
- wire net135;
  wire _0624_;
- wire net142;
  wire _0626_;
  wire _0628_;
  wire _0629_;
@@ -1180,16 +1146,89 @@ module spi_flash_ctrl (clk,
  wire \clk_div[5] ;
  wire \clk_div[6] ;
  wire \clk_div[7] ;
- wire net70;
- wire net71;
- wire net9;
- wire net72;
+ wire clknet_0_clk;
+ wire clknet_2_0__leaf_clk;
+ wire clknet_2_1__leaf_clk;
+ wire clknet_2_2__leaf_clk;
+ wire clknet_2_3__leaf_clk;
+ wire clknet_leaf_0_clk;
+ wire clknet_leaf_10_clk;
+ wire clknet_leaf_11_clk;
+ wire clknet_leaf_12_clk;
+ wire clknet_leaf_13_clk;
+ wire clknet_leaf_14_clk;
+ wire clknet_leaf_15_clk;
+ wire clknet_leaf_16_clk;
+ wire clknet_leaf_17_clk;
+ wire clknet_leaf_18_clk;
+ wire clknet_leaf_19_clk;
+ wire clknet_leaf_1_clk;
+ wire clknet_leaf_20_clk;
+ wire clknet_leaf_21_clk;
+ wire clknet_leaf_22_clk;
+ wire clknet_leaf_23_clk;
+ wire clknet_leaf_24_clk;
+ wire clknet_leaf_25_clk;
+ wire clknet_leaf_26_clk;
+ wire clknet_leaf_27_clk;
+ wire clknet_leaf_28_clk;
+ wire clknet_leaf_29_clk;
+ wire clknet_leaf_2_clk;
+ wire clknet_leaf_30_clk;
+ wire clknet_leaf_31_clk;
+ wire clknet_leaf_32_clk;
+ wire clknet_leaf_33_clk;
+ wire clknet_leaf_34_clk;
+ wire clknet_leaf_35_clk;
+ wire clknet_leaf_36_clk;
+ wire clknet_leaf_37_clk;
+ wire clknet_leaf_38_clk;
+ wire clknet_leaf_39_clk;
+ wire clknet_leaf_3_clk;
+ wire clknet_leaf_40_clk;
+ wire clknet_leaf_41_clk;
+ wire clknet_leaf_4_clk;
+ wire clknet_leaf_5_clk;
+ wire clknet_leaf_6_clk;
+ wire clknet_leaf_7_clk;
+ wire clknet_leaf_8_clk;
+ wire clknet_leaf_9_clk;
  wire net10;
  wire net11;
  wire net12;
  wire net13;
+ wire net130;
+ wire net131;
+ wire net132;
+ wire net133;
+ wire net134;
+ wire net135;
+ wire net136;
+ wire net137;
+ wire net138;
+ wire net139;
  wire net14;
+ wire net140;
+ wire net141;
+ wire net142;
+ wire net143;
+ wire net144;
+ wire net145;
+ wire net146;
+ wire net147;
+ wire net148;
+ wire net149;
  wire net15;
+ wire net150;
+ wire net151;
+ wire net152;
+ wire net153;
+ wire net154;
+ wire net155;
+ wire net156;
+ wire net157;
+ wire net158;
+ wire net159;
  wire net16;
  wire net17;
  wire net18;
@@ -1217,31 +1256,6 @@ module spi_flash_ctrl (clk,
  wire net40;
  wire net41;
  wire net42;
- wire net73;
- wire net74;
- wire net75;
- wire net76;
- wire net77;
- wire net78;
- wire net79;
- wire net80;
- wire net81;
- wire net82;
- wire net83;
- wire net84;
- wire net85;
- wire net86;
- wire net87;
- wire net88;
- wire net89;
- wire net90;
- wire net91;
- wire net92;
- wire net93;
- wire net94;
- wire net95;
- wire net96;
- wire net97;
  wire net43;
  wire net44;
  wire net45;
@@ -1269,6 +1283,36 @@ module spi_flash_ctrl (clk,
  wire net67;
  wire net68;
  wire net69;
+ wire net70;
+ wire net71;
+ wire net72;
+ wire net73;
+ wire net74;
+ wire net75;
+ wire net76;
+ wire net77;
+ wire net78;
+ wire net79;
+ wire net80;
+ wire net81;
+ wire net82;
+ wire net83;
+ wire net84;
+ wire net85;
+ wire net86;
+ wire net87;
+ wire net88;
+ wire net89;
+ wire net9;
+ wire net90;
+ wire net91;
+ wire net92;
+ wire net93;
+ wire net94;
+ wire net95;
+ wire net96;
+ wire net97;
+ wire net98;
  wire \rx_wr_data[0] ;
  wire \rx_wr_data[1] ;
  wire \rx_wr_data[2] ;
@@ -1278,7 +1322,6 @@ module spi_flash_ctrl (clk,
  wire \rx_wr_data[6] ;
  wire \rx_wr_data[7] ;
  wire rx_wr_valid;
- wire net98;
  wire \spi_addr[0] ;
  wire \spi_addr[10] ;
  wire \spi_addr[11] ;
@@ -1677,50 +1720,12 @@ module spi_flash_ctrl (clk,
  wire \u_tx_fifo.wr_idx[2] ;
  wire \u_tx_fifo.wr_idx[3] ;
  wire \u_tx_fifo.wr_ptr[4] ;
- wire net154;
- wire net155;
- wire net156;
- wire net157;
- wire clknet_leaf_10_clk;
- wire clknet_leaf_11_clk;
- wire clknet_leaf_12_clk;
- wire clknet_leaf_13_clk;
- wire clknet_leaf_14_clk;
- wire clknet_leaf_15_clk;
- wire clknet_leaf_16_clk;
- wire clknet_leaf_17_clk;
- wire clknet_leaf_18_clk;
- wire clknet_leaf_19_clk;
- wire clknet_leaf_20_clk;
- wire clknet_leaf_21_clk;
- wire clknet_leaf_22_clk;
- wire clknet_leaf_23_clk;
- wire clknet_leaf_24_clk;
- wire clknet_leaf_25_clk;
- wire clknet_leaf_26_clk;
- wire clknet_leaf_27_clk;
- wire clknet_leaf_28_clk;
- wire clknet_leaf_29_clk;
- wire clknet_leaf_30_clk;
- wire clknet_leaf_31_clk;
- wire clknet_leaf_32_clk;
- wire clknet_leaf_33_clk;
- wire clknet_leaf_34_clk;
- wire clknet_leaf_35_clk;
- wire clknet_leaf_36_clk;
- wire clknet_leaf_37_clk;
- wire clknet_leaf_38_clk;
- wire clknet_leaf_39_clk;
- wire clknet_leaf_40_clk;
- wire clknet_leaf_41_clk;
- wire clknet_0_clk;
- wire clknet_2_0__leaf_clk;
- wire clknet_2_1__leaf_clk;
- wire clknet_2_2__leaf_clk;
- wire clknet_2_3__leaf_clk;
- wire net158;
- wire net159;
 
+ sky130_fd_sc_hd__diode_2 ANTENNA_1 (.DIODE(paddr[2]),
+    .VGND(VSS),
+    .VNB(VSS),
+    .VPB(VDD),
+    .VPWR(VDD));
  sky130_fd_sc_hd__fill_8 FILLER_0_0 (.VGND(VSS),
     .VNB(VSS),
     .VPB(VDD),
@@ -11097,10 +11102,6 @@ module spi_flash_ctrl (clk,
     .VNB(VSS),
     .VPB(VDD),
     .VPWR(VDD));
- sky130_fd_sc_hd__fill_2 FILLER_49_164 (.VGND(VSS),
-    .VNB(VSS),
-    .VPB(VDD),
-    .VPWR(VDD));
  sky130_fd_sc_hd__fill_1 FILLER_49_166 (.VGND(VSS),
     .VNB(VSS),
     .VPB(VDD),
@@ -14989,15 +14990,11 @@ module spi_flash_ctrl (clk,
     .VNB(VSS),
     .VPB(VDD),
     .VPWR(VDD));
- sky130_fd_sc_hd__fill_8 FILLER_67_107 (.VGND(VSS),
+ sky130_fd_sc_hd__fill_4 FILLER_67_107 (.VGND(VSS),
     .VNB(VSS),
     .VPB(VDD),
     .VPWR(VDD));
- sky130_fd_sc_hd__fill_4 FILLER_67_115 (.VGND(VSS),
-    .VNB(VSS),
-    .VPB(VDD),
-    .VPWR(VDD));
- sky130_fd_sc_hd__fill_1 FILLER_67_119 (.VGND(VSS),
+ sky130_fd_sc_hd__fill_4 FILLER_67_116 (.VGND(VSS),
     .VNB(VSS),
     .VPB(VDD),
     .VPWR(VDD));
@@ -15194,6 +15191,14 @@ module spi_flash_ctrl (clk,
     .VPB(VDD),
     .VPWR(VDD));
  sky130_fd_sc_hd__fill_1 FILLER_68_104 (.VGND(VSS),
+    .VNB(VSS),
+    .VPB(VDD),
+    .VPWR(VDD));
+ sky130_fd_sc_hd__fill_2 FILLER_68_111 (.VGND(VSS),
+    .VNB(VSS),
+    .VPB(VDD),
+    .VPWR(VDD));
+ sky130_fd_sc_hd__fill_1 FILLER_68_113 (.VGND(VSS),
     .VNB(VSS),
     .VPB(VDD),
     .VPWR(VDD));
@@ -20465,7 +20470,7 @@ module spi_flash_ctrl (clk,
     .VNB(VSS),
     .VPB(VDD),
     .VPWR(VDD));
- sky130_fd_sc_hd__nand2_1 _1235_ (.A(_1197_),
+ sky130_fd_sc_hd__nand2_2 _1235_ (.A(_1197_),
     .B(_0491_),
     .Y(_0492_),
     .VGND(VSS),
