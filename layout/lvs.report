@@ -44,6 +44,19 @@ Circuit 1: sky130_fd_pr__special_nfet_01v8 |Circuit 2: sky130_fd_pr__special_nfe
 Cell pin lists are equivalent.
 Device classes sky130_fd_pr__special_nfet_01v8 and sky130_fd_pr__special_nfet_01v8 are equivalent.
 
+Circuit 1 cell sky130_fd_pr__diode_pw2nd_05v5 and Circuit 2 cell sky130_fd_pr__diode_pw2nd_05v5 are black boxes.
+Warning: Equate pins:  cell sky130_fd_pr__diode_pw2nd_05v5 is a placeholder, treated as a black box.
+Warning: Equate pins:  cell sky130_fd_pr__diode_pw2nd_05v5 is a placeholder, treated as a black box.
+
+Subcircuit pins:
+Circuit 1: sky130_fd_pr__diode_pw2nd_05v5  |Circuit 2: sky130_fd_pr__diode_pw2nd_05v5  
+-------------------------------------------|-------------------------------------------
+1                                          |1                                          
+2                                          |2                                          
+---------------------------------------------------------------------------------------
+Cell pin lists are equivalent.
+Device classes sky130_fd_pr__diode_pw2nd_05v5 and sky130_fd_pr__diode_pw2nd_05v5 are equivalent.
+
 Circuit 1 cell sky130_fd_pr__res_generic_po and Circuit 2 cell sky130_fd_pr__res_generic_po are black boxes.
 Warning: Equate pins:  cell sky130_fd_pr__res_generic_po is a placeholder, treated as a black box.
 Warning: Equate pins:  cell sky130_fd_pr__res_generic_po is a placeholder, treated as a black box.
@@ -1619,6 +1632,33 @@ VPB                                        |VPB
 Cell pin lists are equivalent.
 Device classes sky130_fd_sc_hd__nor3b_1 and sky130_fd_sc_hd__nor3b_1 are equivalent.
 
+Cell sky130_fd_sc_hd__diode_2 (0) disconnected node: VPB
+Cell sky130_fd_sc_hd__diode_2 (0) disconnected node: VGND
+Cell sky130_fd_sc_hd__diode_2 (0) disconnected node: VPWR
+Cell sky130_fd_sc_hd__diode_2 (1) disconnected node: VGND
+Cell sky130_fd_sc_hd__diode_2 (1) disconnected node: VPB
+Cell sky130_fd_sc_hd__diode_2 (1) disconnected node: VPWR
+Subcircuit summary:
+Circuit 1: sky130_fd_sc_hd__diode_2        |Circuit 2: sky130_fd_sc_hd__diode_2        
+-------------------------------------------|-------------------------------------------
+sky130_fd_pr__diode_pw2nd_05v5 (1)         |sky130_fd_pr__diode_pw2nd_05v5 (1)         
+Number of devices: 1                       |Number of devices: 1                       
+Number of nets: 2                          |Number of nets: 2                          
+---------------------------------------------------------------------------------------
+Netlists match uniquely.
+
+Subcircuit pins:
+Circuit 1: sky130_fd_sc_hd__diode_2        |Circuit 2: sky130_fd_sc_hd__diode_2        
+-------------------------------------------|-------------------------------------------
+VNB                                        |VNB                                        
+DIODE                                      |DIODE                                      
+VPB                                        |VPB                                        
+VGND                                       |VGND                                       
+VPWR                                       |VPWR                                       
+---------------------------------------------------------------------------------------
+Cell pin lists are equivalent.
+Device classes sky130_fd_sc_hd__diode_2 and sky130_fd_sc_hd__diode_2 are equivalent.
+
 Subcircuit summary:
 Circuit 1: sky130_fd_sc_hd__o31ai_1        |Circuit 2: sky130_fd_sc_hd__o31ai_1        
 -------------------------------------------|-------------------------------------------
@@ -2457,7 +2497,7 @@ sky130_fd_sc_hd__and2_1 (24)               |sky130_fd_sc_hd__and2_1 (24)
 sky130_fd_sc_hd__mux2_2 (317)              |sky130_fd_sc_hd__mux2_2 (317)              
 sky130_fd_sc_hd__nand3_1 (32)              |sky130_fd_sc_hd__nand3_1 (32)              
 sky130_fd_sc_hd__nor2b_1 (14)              |sky130_fd_sc_hd__nor2b_1 (14)              
-sky130_fd_sc_hd__nand2_1 (102)             |sky130_fd_sc_hd__nand2_1 (102)             
+sky130_fd_sc_hd__nand2_1 (101)             |sky130_fd_sc_hd__nand2_1 (101)             
 sky130_fd_sc_hd__or3_1 (10)                |sky130_fd_sc_hd__or3_1 (10)                
 sky130_fd_sc_hd__a21oi_1 (39)              |sky130_fd_sc_hd__a21oi_1 (39)              
 sky130_fd_sc_hd__nor3_1 (13)               |sky130_fd_sc_hd__nor3_1 (13)               
@@ -2484,7 +2524,7 @@ sky130_fd_sc_hd__clkinv_4 (1)              |sky130_fd_sc_hd__clkinv_4 (1)
 sky130_fd_sc_hd__inv_6 (1)                 |sky130_fd_sc_hd__inv_6 (1)                 
 sky130_fd_sc_hd__nor4b_1 (1)               |sky130_fd_sc_hd__nor4b_1 (1)               
 sky130_fd_sc_hd__nor3_4 (1)                |sky130_fd_sc_hd__nor3_4 (1)                
-sky130_fd_sc_hd__nand2_2 (1)               |sky130_fd_sc_hd__nand2_2 (1)               
+sky130_fd_sc_hd__nand2_2 (2)               |sky130_fd_sc_hd__nand2_2 (2)               
 sky130_fd_sc_hd__a21bo_2 (7)               |sky130_fd_sc_hd__a21bo_2 (7)               
 sky130_fd_sc_hd__clkinv_2 (4)              |sky130_fd_sc_hd__clkinv_2 (4)              
 sky130_fd_sc_hd__buf_4 (28)                |sky130_fd_sc_hd__buf_4 (28)                
@@ -2502,6 +2542,7 @@ sky130_fd_sc_hd__or3b_2 (1)                |sky130_fd_sc_hd__or3b_2 (1)
 sky130_fd_sc_hd__o2bb2ai_1 (2)             |sky130_fd_sc_hd__o2bb2ai_1 (2)             
 sky130_fd_sc_hd__o32ai_1 (2)               |sky130_fd_sc_hd__o32ai_1 (2)               
 sky130_fd_sc_hd__nor3b_1 (6)               |sky130_fd_sc_hd__nor3b_1 (6)               
+sky130_fd_sc_hd__diode_2 (1)               |sky130_fd_sc_hd__diode_2 (1)               
 sky130_fd_sc_hd__o31ai_1 (3)               |sky130_fd_sc_hd__o31ai_1 (3)               
 sky130_fd_sc_hd__nor4_1 (10)               |sky130_fd_sc_hd__nor4_1 (10)               
 sky130_fd_sc_hd__a2bb2oi_1 (3)             |sky130_fd_sc_hd__a2bb2oi_1 (3)             
@@ -2532,7 +2573,7 @@ sky130_fd_sc_hd__a41oi_1 (1)               |sky130_fd_sc_hd__a41oi_1 (1)
 sky130_fd_sc_hd__o2111a_1 (1)              |sky130_fd_sc_hd__o2111a_1 (1)              
 sky130_fd_sc_hd__o311ai_0 (1)              |sky130_fd_sc_hd__o311ai_0 (1)              
 sky130_fd_sc_hd__clkinv_8 (1)              |sky130_fd_sc_hd__clkinv_8 (1)              
-Number of devices: 1723                    |Number of devices: 1723                    
+Number of devices: 1724                    |Number of devices: 1724                    
 Number of nets: 1836                       |Number of nets: 1836                       
 ---------------------------------------------------------------------------------------
 Resolving symmetries by property value.
@@ -2543,19 +2584,18 @@ Subcircuit pins:
 Circuit 1: spi_flash_ctrl                  |Circuit 2: spi_flash_ctrl                  
 -------------------------------------------|-------------------------------------------
 pready                                     |pready                                     
-prdata[28]                                 |prdata[28]                                 
-prdata[29]                                 |prdata[29]                                 
-prdata[26]                                 |prdata[26]                                 
 prdata[30]                                 |prdata[30]                                 
+prdata[29]                                 |prdata[29]                                 
+prdata[28]                                 |prdata[28]                                 
+prdata[26]                                 |prdata[26]                                 
 prdata[24]                                 |prdata[24]                                 
 prdata[31]                                 |prdata[31]                                 
-prdata[25]                                 |prdata[25]                                 
 prdata[27]                                 |prdata[27]                                 
+prdata[25]                                 |prdata[25]                                 
 clk                                        |clk                                        
 pwdata[11]                                 |pwdata[11]                                 
 pwdata[16]                                 |pwdata[16]                                 
 miso                                       |miso                                       
-paddr[2]                                   |paddr[2]                                   
 paddr[3]                                   |paddr[3]                                   
 paddr[1]                                   |paddr[1]                                   
 paddr[4]                                   |paddr[4]                                   
@@ -2567,17 +2607,12 @@ pwdata[4]                                  |pwdata[4]
 pwdata[5]                                  |pwdata[5]                                  
 pwdata[6]                                  |pwdata[6]                                  
 pwdata[7]                                  |pwdata[7]                                  
-penable                                    |penable                                    
 psel                                       |psel                                       
 pwrite                                     |pwrite                                     
+penable                                    |penable                                    
+paddr[0]                                   |paddr[0]                                   
 paddr[7]                                   |paddr[7]                                   
 paddr[6]                                   |paddr[6]                                   
-paddr[10]                                  |paddr[10]                                  
-paddr[11]                                  |paddr[11]                                  
-paddr[15]                                  |paddr[15]                                  
-paddr[21]                                  |paddr[21]                                  
-paddr[23]                                  |paddr[23]                                  
-paddr[26]                                  |paddr[26]                                  
 pwdata[10]                                 |pwdata[10]                                 
 pwdata[22]                                 |pwdata[22]                                 
 pwdata[14]                                 |pwdata[14]                                 
@@ -2587,12 +2622,18 @@ pwdata[18]                                 |pwdata[18]
 pwdata[20]                                 |pwdata[20]                                 
 pwdata[19]                                 |pwdata[19]                                 
 pwdata[8]                                  |pwdata[8]                                  
-pwdata[23]                                 |pwdata[23]                                 
 pwdata[15]                                 |pwdata[15]                                 
-pwdata[9]                                  |pwdata[9]                                  
 pwdata[12]                                 |pwdata[12]                                 
+pwdata[23]                                 |pwdata[23]                                 
 pwdata[17]                                 |pwdata[17]                                 
-paddr[0]                                   |paddr[0]                                   
+pwdata[9]                                  |pwdata[9]                                  
+paddr[5]                                   |paddr[5]                                   
+paddr[10]                                  |paddr[10]                                  
+paddr[11]                                  |paddr[11]                                  
+paddr[15]                                  |paddr[15]                                  
+paddr[21]                                  |paddr[21]                                  
+paddr[23]                                  |paddr[23]                                  
+paddr[26]                                  |paddr[26]                                  
 paddr[12]                                  |paddr[12]                                  
 paddr[18]                                  |paddr[18]                                  
 paddr[19]                                  |paddr[19]                                  
@@ -2605,7 +2646,6 @@ paddr[24]                                  |paddr[24]
 paddr[25]                                  |paddr[25]                                  
 paddr[28]                                  |paddr[28]                                  
 paddr[30]                                  |paddr[30]                                  
-paddr[5]                                   |paddr[5]                                   
 paddr[13]                                  |paddr[13]                                  
 paddr[14]                                  |paddr[14]                                  
 paddr[20]                                  |paddr[20]                                  
@@ -2616,32 +2656,33 @@ rst_n                                      |rst_n
 cs_n                                       |cs_n                                       
 irq                                        |irq                                        
 mosi                                       |mosi                                       
-prdata[7]                                  |prdata[7]                                  
-prdata[4]                                  |prdata[4]                                  
-prdata[3]                                  |prdata[3]                                  
-prdata[1]                                  |prdata[1]                                  
-prdata[0]                                  |prdata[0]                                  
-prdata[5]                                  |prdata[5]                                  
-prdata[2]                                  |prdata[2]                                  
 prdata[6]                                  |prdata[6]                                  
+prdata[4]                                  |prdata[4]                                  
+prdata[1]                                  |prdata[1]                                  
+prdata[3]                                  |prdata[3]                                  
+prdata[0]                                  |prdata[0]                                  
+prdata[2]                                  |prdata[2]                                  
+prdata[5]                                  |prdata[5]                                  
+prdata[7]                                  |prdata[7]                                  
+sclk                                       |sclk                                       
 perror                                     |perror                                     
-prdata[21]                                 |prdata[21]                                 
-prdata[22]                                 |prdata[22]                                 
-prdata[13]                                 |prdata[13]                                 
 prdata[18]                                 |prdata[18]                                 
+prdata[21]                                 |prdata[21]                                 
+prdata[13]                                 |prdata[13]                                 
 prdata[10]                                 |prdata[10]                                 
 prdata[14]                                 |prdata[14]                                 
+prdata[22]                                 |prdata[22]                                 
 prdata[19]                                 |prdata[19]                                 
 prdata[8]                                  |prdata[8]                                  
 prdata[20]                                 |prdata[20]                                 
-prdata[9]                                  |prdata[9]                                  
-prdata[11]                                 |prdata[11]                                 
-prdata[16]                                 |prdata[16]                                 
-prdata[12]                                 |prdata[12]                                 
 prdata[17]                                 |prdata[17]                                 
+prdata[12]                                 |prdata[12]                                 
+prdata[16]                                 |prdata[16]                                 
+prdata[11]                                 |prdata[11]                                 
 prdata[15]                                 |prdata[15]                                 
+prdata[9]                                  |prdata[9]                                  
 prdata[23]                                 |prdata[23]                                 
-sclk                                       |sclk                                       
+paddr[2]                                   |paddr[2]                                   
 VSS                                        |VSS                                        
 VDD                                        |VDD                                        
 pwdata[24]                                 |pwdata[24]                                 
