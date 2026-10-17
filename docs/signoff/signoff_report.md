@@ -18,7 +18,7 @@
 | Netgen LVS report | `layout/lvs.report` |
 | Final GDSII | `layout/spi_flash_ctrl.gds` |
 | Powered post-route netlist | `layout/spi_flash_ctrl.pnl.v` |
-| Layout image | `layout/spi_flash_ctrl.png` (**not present** in this repository checkout) |
+| Layout image | `layout/spi_flash_ctrl.png` |
 
 All numeric results below are taken from `layout/metrics.json`, `layout/drc.lyrdb`, and `layout/lvs.report` only.
 
@@ -112,7 +112,9 @@ Note recorded in the same report (does not change the Final result line):
 
 ## 6. Layout image
 
-`layout/spi_flash_ctrl.png` is not present in this checkout, so no layout image is embedded here. Layout geometry evidence remains `layout/spi_flash_ctrl.gds`.
+![spi_flash_ctrl layout](../../layout/spi_flash_ctrl.png)
+
+Source: `layout/spi_flash_ctrl.png`. Layout geometry evidence also includes `layout/spi_flash_ctrl.gds`.
 
 ---
 
